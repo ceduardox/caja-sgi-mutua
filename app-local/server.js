@@ -501,6 +501,14 @@ function getReports(params) {
     LIMIT 50
   `).all(STORE_ID);
 
+  const paymentMethods = db.prepare(`
+    SELECT payment_method, COUNT(*) AS sales_count, COALESCE(SUM(total), 0) AS total
+    FROM sales
+    WHERE store_id = ? AND status = 'completed' AND created_at BETWEEN ? AND ?
+    GROUP BY payment_method
+    ORDER BY total DESC
+  `).all(STORE_ID, fromStamp, toStamp);
+
   const sales = db.prepare(`
     SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
     FROM sales
@@ -525,6 +533,7 @@ function getReports(params) {
       total: normalizeMoney(row.total),
       gross_profit: normalizeMoney(row.gross_profit)
     })),
+    payment_methods: paymentMethods.map((row) => ({ ...row, total: normalizeMoney(row.total) })),
     low_stock: lowStock,
     sales
   };

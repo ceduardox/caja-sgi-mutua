@@ -149,18 +149,26 @@
         <div class="panel-header">
           <div>
             <p class="eyebrow">Visual</p>
-            <h2>Graficos 3D</h2>
+            <h2>Graficos de venta</h2>
           </div>
-          <span id="chartsStatus" class="meta">ECharts GL</span>
+          <span id="chartsStatus" class="meta">ECharts</span>
         </div>
         <div class="chart-grid">
           <div class="chart-box">
             <h3>Ventas por dia</h3>
-            <div id="sales3dChart" class="chart"></div>
+            <div id="salesTrendChart" class="chart"></div>
           </div>
           <div class="chart-box">
             <h3>Productos mas vendidos</h3>
-            <div id="products3dChart" class="chart"></div>
+            <div id="productsChart" class="chart"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Metodos de pago</h3>
+            <div id="paymentsChart" class="chart short"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Stock bajo</h3>
+            <div id="stockChart" class="chart short"></div>
           </div>
         </div>
       </section>
@@ -304,7 +312,6 @@
 
     <div id="toast" class="toast" hidden></div>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts-gl@2/dist/echarts-gl.min.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

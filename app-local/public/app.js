@@ -85,13 +85,17 @@ const els = {
   lowStockList: document.querySelector('#lowStockList'),
   reportSalesList: document.querySelector('#reportSalesList'),
   chartsStatus: document.querySelector('#chartsStatus'),
-  sales3dChart: document.querySelector('#sales3dChart'),
-  products3dChart: document.querySelector('#products3dChart'),
+  salesTrendChart: document.querySelector('#salesTrendChart'),
+  productsChart: document.querySelector('#productsChart'),
+  paymentsChart: document.querySelector('#paymentsChart'),
+  stockChart: document.querySelector('#stockChart'),
   toast: document.querySelector('#toast')
 };
 
-let salesChart;
-let productsChart;
+let salesTrendChart;
+let productsBarChart;
+let paymentsChart;
+let stockChart;
 let cameraStream;
 let capturedCameraImage;
 let waitingProductBarcodeScan = false;
@@ -177,8 +181,9 @@ function bindEvents() {
   window.addEventListener('resize', debounce(resizeCharts, 120));
   if (window.ResizeObserver) {
     chartsResizeObserver = new ResizeObserver(() => resizeCharts());
-    chartsResizeObserver.observe(els.sales3dChart);
-    chartsResizeObserver.observe(els.products3dChart);
+    [els.salesTrendChart, els.productsChart, els.paymentsChart, els.stockChart].forEach((element) => {
+      if (element) chartsResizeObserver.observe(element);
+    });
   }
 }
 
@@ -876,125 +881,122 @@ function exportReportSales() {
 }
 
 function renderReportCharts(data) {
-  if (!window.echarts || !els.sales3dChart || !els.products3dChart) {
+  if (!window.echarts || !els.salesTrendChart || !els.productsChart) {
     els.chartsStatus.textContent = 'Graficos disponibles con internet';
-    els.sales3dChart.innerHTML = '<div class="empty">Sin libreria de graficos cargada.</div>';
-    els.products3dChart.innerHTML = '<div class="empty">Sin libreria de graficos cargada.</div>';
+    [els.salesTrendChart, els.productsChart, els.paymentsChart, els.stockChart].forEach((element) => {
+      if (element) element.innerHTML = '<div class="empty">Sin libreria de graficos cargada.</div>';
+    });
     return;
   }
 
   els.chartsStatus.textContent = 'Animado';
-  ensureChartSize(els.sales3dChart);
-  ensureChartSize(els.products3dChart);
-  salesChart = salesChart || echarts.init(els.sales3dChart, null, { renderer: 'canvas' });
-  productsChart = productsChart || echarts.init(els.products3dChart, null, { renderer: 'canvas' });
+  [els.salesTrendChart, els.productsChart, els.paymentsChart, els.stockChart].forEach(ensureChartSize);
+  salesTrendChart = salesTrendChart || echarts.init(els.salesTrendChart, null, { renderer: 'canvas' });
+  productsBarChart = productsBarChart || echarts.init(els.productsChart, null, { renderer: 'canvas' });
+  paymentsChart = paymentsChart || echarts.init(els.paymentsChart, null, { renderer: 'canvas' });
+  stockChart = stockChart || echarts.init(els.stockChart, null, { renderer: 'canvas' });
 
   const dayLabels = data.by_day.length ? data.by_day.map((row) => row.day.slice(5)) : [data.from.slice(5)];
   const dayValues = data.by_day.length ? data.by_day.map((row) => Number(row.total || 0)) : [0];
-  const sales3dData = dayValues.map((value, index) => [index, 0, value]);
 
-  salesChart.setOption({
+  salesTrendChart.setOption({
+    grid: { left: 48, right: 18, top: 26, bottom: 38 },
     tooltip: {
-      formatter: (params) => `${dayLabels[params.value[0]]}<br>${money(params.value[2])}`
+      trigger: 'axis',
+      valueFormatter: (value) => money(value)
     },
     animation: true,
-    animationDuration: 900,
-    animationEasing: 'cubicOut',
-    xAxis3D: {
+    animationDuration: 700,
+    xAxis: {
       type: 'category',
       data: dayLabels,
-      axisLabel: { color: '#475467' }
+      boundaryGap: false
     },
-    yAxis3D: {
-      type: 'category',
-      data: ['Ventas'],
-      axisLabel: { color: '#475467' }
-    },
-    zAxis3D: {
+    yAxis: {
       type: 'value',
-      axisLabel: { color: '#475467' }
-    },
-    grid3D: {
-      left: 0,
-      right: 0,
-      top: 0,
-      bottom: 0,
-      boxWidth: 150,
-      boxHeight: 70,
-      boxDepth: 38,
-      viewControl: {
-        autoRotate: true,
-        autoRotateSpeed: 5,
-        distance: 185,
-        center: [0, 0, -8]
-      },
-      light: {
-        main: { intensity: 1.2 },
-        ambient: { intensity: 0.35 }
-      }
+      axisLabel: { formatter: (value) => `Bs ${value}` }
     },
     series: [{
-      type: 'bar3D',
-      data: sales3dData,
-      bevelSize: 0.25,
-      shading: 'lambert',
-      itemStyle: { color: '#0e766f' }
+      name: 'Ventas',
+      type: 'line',
+      smooth: true,
+      symbolSize: 8,
+      areaStyle: { opacity: 0.18 },
+      lineStyle: { width: 3 },
+      itemStyle: { color: '#0e766f' },
+      data: dayValues
     }]
   });
 
   const top = data.best_sellers.slice(0, 8);
   const productLabels = top.length ? top.map((item) => trimLabel(item.product_name)) : ['Sin ventas'];
   const productValues = top.length ? top.map((item) => Number(item.total || 0)) : [0];
-  const product3dData = productValues.map((value, index) => [index, 0, value]);
 
-  productsChart.setOption({
+  productsBarChart.setOption({
+    grid: { left: 90, right: 22, top: 18, bottom: 28 },
     tooltip: {
-      formatter: (params) => `${productLabels[params.value[0]]}<br>${money(params.value[2])}`
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      valueFormatter: (value) => money(value)
     },
     animation: true,
-    animationDuration: 900,
-    animationEasing: 'cubicOut',
-    xAxis3D: {
-      type: 'category',
-      data: productLabels,
-      axisLabel: { color: '#475467', interval: 0 }
-    },
-    yAxis3D: {
-      type: 'category',
-      data: ['Top'],
-      axisLabel: { color: '#475467' }
-    },
-    zAxis3D: {
+    animationDuration: 700,
+    xAxis: {
       type: 'value',
-      axisLabel: { color: '#475467' }
+      axisLabel: { formatter: (value) => `Bs ${value}` }
     },
-    grid3D: {
-      left: 0,
-      right: 0,
-      top: 0,
-      bottom: 0,
-      boxWidth: 150,
-      boxHeight: 72,
-      boxDepth: 40,
-      viewControl: {
-        autoRotate: true,
-        autoRotateSpeed: 4,
-        distance: 190,
-        center: [0, 0, -8]
-      },
-      light: {
-        main: { intensity: 1.25 },
-        ambient: { intensity: 0.35 }
-      }
+    yAxis: {
+      type: 'category',
+      inverse: true,
+      data: productLabels
     },
     series: [{
-      type: 'bar3D',
-      data: product3dData,
-      bevelSize: 0.25,
-      shading: 'lambert',
-      itemStyle: {
-        color: (params) => ['#0e766f', '#175cd3', '#b54708', '#7a2e99'][params.dataIndex % 4]
-      }
+      name: 'Vendido',
+      type: 'bar',
+      barMaxWidth: 24,
+      itemStyle: { color: '#175cd3', borderRadius: [0, 4, 4, 0] },
+      data: productValues
+    }]
+  });
+
+  const paymentData = (data.payment_methods || []).map((item) => ({
+    name: paymentLabel(item.payment_method),
+    value: Number(item.total || 0)
+  }));
+  paymentsChart.setOption({
+    tooltip: { trigger: 'item', valueFormatter: (value) => money(value) },
+    legend: { bottom: 0 },
+    animation: true,
+    animationDuration: 700,
+    series: [{
+      name: 'Metodo',
+      type: 'pie',
+      radius: ['48%', '72%'],
+      center: ['50%', '44%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 },
+      data: paymentData.length ? paymentData : [{ name: 'Sin ventas', value: 0 }]
+    }]
+  });
+
+  const stockItems = data.low_stock.slice(0, 8);
+  stockChart.setOption({
+    grid: { left: 92, right: 18, top: 16, bottom: 26 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    animation: true,
+    animationDuration: 700,
+    xAxis: { type: 'value' },
+    yAxis: {
+      type: 'category',
+      inverse: true,
+      data: stockItems.length ? stockItems.map((item) => trimLabel(item.name)) : ['Sin stock bajo']
+    },
+    series: [{
+      name: 'Stock',
+      type: 'bar',
+      barMaxWidth: 22,
+      itemStyle: { color: '#b54708', borderRadius: [0, 4, 4, 0] },
+      data: stockItems.length ? stockItems.map((item) => Number(item.stock || 0)) : [0]
     }]
   });
 
@@ -1013,8 +1015,10 @@ function ensureChartSize(element) {
 
 function resizeCharts() {
   if (!document.querySelector('#reportsView')?.classList.contains('active')) return;
-  salesChart?.resize();
-  productsChart?.resize();
+  salesTrendChart?.resize();
+  productsBarChart?.resize();
+  paymentsChart?.resize();
+  stockChart?.resize();
 }
 
 async function api(path, options = {}) {

@@ -781,8 +781,12 @@ input.scan-active {
   display: block;
   width: 100%;
   min-width: 0;
-  height: clamp(320px, 34vw, 460px);
+  height: clamp(280px, 30vw, 380px);
   overflow: hidden;
+}
+
+.chart.short {
+  height: clamp(240px, 24vw, 320px);
 }
 
 .chart canvas {
