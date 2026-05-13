@@ -571,7 +571,7 @@ function normalizeImage(value) {
   const text = cleanOptional(value);
   if (!text) return null;
   if (!text.startsWith('data:image/')) throw new Error('La imagen debe ser JPG, PNG o WEBP');
-  if (text.length > 900_000) throw new Error('La imagen es demasiado pesada');
+  if (text.length > 1_300_000) throw new Error('La imagen optimizada sigue siendo demasiado pesada');
   return text;
 }
 

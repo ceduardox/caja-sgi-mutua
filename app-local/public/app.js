@@ -47,6 +47,9 @@ const els = {
   receiptContent: document.querySelector('#receiptContent'),
   printReceiptButton: document.querySelector('#printReceiptButton'),
   closeReceiptButton: document.querySelector('#closeReceiptButton'),
+  imageDialog: document.querySelector('#imageDialog'),
+  expandedImage: document.querySelector('#expandedImage'),
+  closeImageDialog: document.querySelector('#closeImageDialog'),
   reportFrom: document.querySelector('#reportFrom'),
   reportTo: document.querySelector('#reportTo'),
   loadReportsButton: document.querySelector('#loadReportsButton'),
@@ -94,11 +97,23 @@ function bindEvents() {
   els.productForm.addEventListener('submit', saveProduct);
   els.productImageInput.addEventListener('change', handleImageInput);
   els.removeProductImage.addEventListener('click', () => setProductImage(null));
+  els.productImagePreview.addEventListener('click', () => {
+    if (els.productImageValue.value) openImageViewer(els.productImageValue.value);
+  });
   els.printReceiptButton.addEventListener('click', () => window.print());
   els.closeReceiptButton.addEventListener('click', () => {
     els.receiptDialog.close();
     els.scanInput.focus();
   });
+  els.closeImageDialog.addEventListener('click', () => els.imageDialog.close());
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-image-view], [data-product-image]');
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const src = target.dataset.imageView || findProductImage(target.dataset.productImage);
+    if (src) openImageViewer(src);
+  }, true);
   els.loadReportsButton.addEventListener('click', loadReports);
   els.exportSalesButton.addEventListener('click', exportReportSales);
 }
@@ -413,20 +428,25 @@ async function saveProduct(event) {
   }
 }
 
-function handleImageInput(event) {
+async function handleImageInput(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
     showToast('Usa una imagen JPG, PNG o WEBP');
     return;
   }
-  if (file.size > 700_000) {
-    showToast('La imagen debe pesar menos de 700 KB');
+  if (file.size > 12_000_000) {
+    showToast('La imagen es muy pesada. Usa una menor a 12 MB');
     return;
   }
-  const reader = new FileReader();
-  reader.onload = () => setProductImage(reader.result);
-  reader.readAsDataURL(file);
+  try {
+    showToast('Optimizando imagen...');
+    const image = await compressImageFile(file);
+    setProductImage(image);
+    showToast('Imagen optimizada y lista');
+  } catch (error) {
+    showToast(error.message || 'No se pudo procesar la imagen');
+  }
 }
 
 function setProductImage(value) {
@@ -434,10 +454,58 @@ function setProductImage(value) {
   if (value) {
     els.productImagePreview.classList.remove('empty');
     els.productImagePreview.innerHTML = `<img src="${value}" alt="">`;
+    els.productImagePreview.title = 'Clic para ampliar';
   } else {
     els.productImagePreview.classList.add('empty');
     els.productImagePreview.textContent = 'Sin imagen';
+    els.productImagePreview.title = '';
   }
+}
+
+async function compressImageFile(file) {
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(sourceUrl);
+    const maxSide = 1200;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(image, 0, 0, width, height);
+
+    for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+      const dataUrl = await canvasToWebp(canvas, quality);
+      if (dataUrl.length <= 1_200_000 || quality === 0.52) return dataUrl;
+    }
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+  throw new Error('No se pudo optimizar la imagen');
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    image.src = src;
+  });
+}
+
+function canvasToWebp(canvas, quality) {
+  return new Promise((resolve) => {
+    resolve(canvas.toDataURL('image/webp', quality));
+  });
+}
+
+function openImageViewer(src) {
+  els.expandedImage.src = src;
+  els.imageDialog.showModal();
 }
 
 function showReceipt(sale) {
@@ -491,9 +559,15 @@ async function api(path, options = {}) {
 
 function productThumb(product) {
   if (product.image_path) {
-    return `<span class="thumb"><img src="${product.image_path}" alt=""></span>`;
+    return `<span class="thumb image-click" data-product-image="${product.id}" title="Ampliar imagen"><img src="${product.image_path}" alt=""></span>`;
   }
   return `<span class="thumb placeholder">${initials(product.name)}</span>`;
+}
+
+function findProductImage(id) {
+  const product = state.products.find((item) => item.id === id)
+    || state.lastReport?.low_stock?.find((item) => item.id === id);
+  return product?.image_path || null;
 }
 
 function setDefaultReportDates() {
