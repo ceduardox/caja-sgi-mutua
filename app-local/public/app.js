@@ -36,6 +36,7 @@ const els = {
   removeProductImage: document.querySelector('#removeProductImage'),
   productName: document.querySelector('#productName'),
   productBarcode: document.querySelector('#productBarcode'),
+  barcodeScanHint: document.querySelector('#barcodeScanHint'),
   productSku: document.querySelector('#productSku'),
   productSalePrice: document.querySelector('#productSalePrice'),
   productCostPrice: document.querySelector('#productCostPrice'),
@@ -93,6 +94,7 @@ let salesChart;
 let productsChart;
 let cameraStream;
 let capturedCameraImage;
+let waitingProductBarcodeScan = false;
 
 boot();
 
@@ -130,17 +132,12 @@ function bindEvents() {
   });
   els.newProductButton.addEventListener('click', () => openProductDialog());
   els.scanNewProductButton.addEventListener('click', () => openProductDialog(null, { focusBarcode: true }));
-  els.focusBarcodeButton.addEventListener('click', () => {
-    els.productBarcode.focus();
-    els.productBarcode.select();
-  });
+  els.focusBarcodeButton.addEventListener('click', startProductBarcodeScan);
+  els.productBarcode.addEventListener('input', handleProductBarcodeInput);
   els.productBarcode.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      const next = els.productName.value.trim() ? els.productSalePrice : els.productName;
-      next.focus();
-      next.select?.();
-      showToast('Codigo capturado');
+      finishProductBarcodeScan();
     }
   });
   els.closeProductDialog.addEventListener('click', () => els.productDialog.close());
@@ -526,12 +523,47 @@ function openProductDialog(product = null, options = {}) {
   setProductImage(product?.image_path || null);
   els.productDialog.showModal();
   if (options.focusBarcode) {
-    els.productBarcode.focus();
-    els.productBarcode.select();
-    showToast('Escanea el codigo del producto');
+    startProductBarcodeScan();
   } else {
+    setBarcodeScanState(false);
     els.productName.focus();
   }
+}
+
+function startProductBarcodeScan() {
+  waitingProductBarcodeScan = true;
+  els.productBarcode.value = '';
+  setBarcodeScanState(true);
+  els.productBarcode.focus();
+  showToast('Escanea ahora el codigo de barras');
+}
+
+function handleProductBarcodeInput() {
+  if (!waitingProductBarcodeScan) return;
+  els.barcodeScanHint.textContent = `Codigo detectado: ${els.productBarcode.value}`;
+}
+
+function finishProductBarcodeScan() {
+  const code = els.productBarcode.value.trim();
+  if (!code) {
+    startProductBarcodeScan();
+    return;
+  }
+  waitingProductBarcodeScan = false;
+  setBarcodeScanState(false);
+  const next = els.productName.value.trim() ? els.productSalePrice : els.productName;
+  next.focus();
+  next.select?.();
+  showToast(`Codigo capturado: ${code}`);
+}
+
+function setBarcodeScanState(active) {
+  els.focusBarcodeButton.textContent = active ? 'Esperando...' : 'Escanear';
+  els.focusBarcodeButton.classList.toggle('scan-active', active);
+  els.productBarcode.classList.toggle('scan-active', active);
+  els.barcodeScanHint.textContent = active
+    ? 'Apunta el lector al codigo de barras. Se rellenara aqui automaticamente.'
+    : 'Presiona Escanear y lee el codigo del producto.';
 }
 
 async function saveProduct(event) {
