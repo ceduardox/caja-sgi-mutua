@@ -31,6 +31,8 @@ const els = {
   productImageValue: document.querySelector('#productImageValue'),
   productImagePreview: document.querySelector('#productImagePreview'),
   productImageInput: document.querySelector('#productImageInput'),
+  mobileCameraInput: document.querySelector('#mobileCameraInput'),
+  openCameraButton: document.querySelector('#openCameraButton'),
   removeProductImage: document.querySelector('#removeProductImage'),
   productName: document.querySelector('#productName'),
   productBarcode: document.querySelector('#productBarcode'),
@@ -62,6 +64,14 @@ const els = {
   imageDialog: document.querySelector('#imageDialog'),
   expandedImage: document.querySelector('#expandedImage'),
   closeImageDialog: document.querySelector('#closeImageDialog'),
+  cameraDialog: document.querySelector('#cameraDialog'),
+  closeCameraDialog: document.querySelector('#closeCameraDialog'),
+  cameraVideo: document.querySelector('#cameraVideo'),
+  cameraCanvas: document.querySelector('#cameraCanvas'),
+  cameraPreview: document.querySelector('#cameraPreview'),
+  capturePhotoButton: document.querySelector('#capturePhotoButton'),
+  retakePhotoButton: document.querySelector('#retakePhotoButton'),
+  confirmPhotoButton: document.querySelector('#confirmPhotoButton'),
   reportFrom: document.querySelector('#reportFrom'),
   reportTo: document.querySelector('#reportTo'),
   loadReportsButton: document.querySelector('#loadReportsButton'),
@@ -81,6 +91,8 @@ const els = {
 
 let salesChart;
 let productsChart;
+let cameraStream;
+let capturedCameraImage;
 
 boot();
 
@@ -134,6 +146,13 @@ function bindEvents() {
   els.closeProductDialog.addEventListener('click', () => els.productDialog.close());
   els.productForm.addEventListener('submit', saveProduct);
   els.productImageInput.addEventListener('change', handleImageInput);
+  els.mobileCameraInput.addEventListener('change', handleImageInput);
+  els.openCameraButton.addEventListener('click', openCameraCapture);
+  els.closeCameraDialog.addEventListener('click', closeCameraCapture);
+  els.cameraDialog.addEventListener('close', stopCameraStream);
+  els.capturePhotoButton.addEventListener('click', captureCameraFrame);
+  els.retakePhotoButton.addEventListener('click', retakeCameraPhoto);
+  els.confirmPhotoButton.addEventListener('click', confirmCameraPhoto);
   els.removeProductImage.addEventListener('click', () => setProductImage(null));
   els.productImagePreview.addEventListener('click', () => {
     if (els.productImageValue.value) openImageViewer(els.productImageValue.value);
@@ -602,6 +621,100 @@ async function compressImageFile(file) {
     URL.revokeObjectURL(sourceUrl);
   }
   throw new Error('No se pudo optimizar la imagen');
+}
+
+async function openCameraCapture() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showToast('Este navegador no permite abrir camara directa. Usa Camara movil.');
+    return;
+  }
+
+  try {
+    capturedCameraImage = null;
+    els.cameraPreview.hidden = true;
+    els.cameraVideo.hidden = false;
+    els.capturePhotoButton.hidden = false;
+    els.retakePhotoButton.hidden = true;
+    els.confirmPhotoButton.hidden = true;
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    els.cameraVideo.srcObject = cameraStream;
+    els.cameraDialog.showModal();
+  } catch {
+    showToast('No se pudo abrir la camara. Revisa permisos o usa Camara movil.');
+  }
+}
+
+async function captureCameraFrame() {
+  const video = els.cameraVideo;
+  if (!video.videoWidth || !video.videoHeight) {
+    showToast('La camara aun no esta lista');
+    return;
+  }
+
+  const canvas = els.cameraCanvas;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  capturedCameraImage = await compressCanvasToWebp(canvas);
+  els.cameraPreview.src = capturedCameraImage;
+  els.cameraPreview.hidden = false;
+  els.cameraVideo.hidden = true;
+  els.capturePhotoButton.hidden = true;
+  els.retakePhotoButton.hidden = false;
+  els.confirmPhotoButton.hidden = false;
+}
+
+function retakeCameraPhoto() {
+  capturedCameraImage = null;
+  els.cameraPreview.hidden = true;
+  els.cameraVideo.hidden = false;
+  els.capturePhotoButton.hidden = false;
+  els.retakePhotoButton.hidden = true;
+  els.confirmPhotoButton.hidden = true;
+}
+
+function confirmCameraPhoto() {
+  if (!capturedCameraImage) {
+    showToast('Primero toma una foto');
+    return;
+  }
+  setProductImage(capturedCameraImage);
+  closeCameraCapture();
+  showToast('Foto confirmada');
+}
+
+function closeCameraCapture() {
+  els.cameraDialog.close();
+  stopCameraStream();
+}
+
+function stopCameraStream() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+  els.cameraVideo.srcObject = null;
+}
+
+async function compressCanvasToWebp(sourceCanvas) {
+  const maxSide = 1200;
+  const scale = Math.min(1, maxSide / Math.max(sourceCanvas.width, sourceCanvas.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+  for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+    const dataUrl = await canvasToWebp(canvas, quality);
+    if (dataUrl.length <= 1_200_000 || quality === 0.52) return dataUrl;
+  }
+  throw new Error('No se pudo optimizar la foto');
 }
 
 function loadImage(src) {

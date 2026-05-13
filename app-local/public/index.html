@@ -195,6 +195,11 @@
               Subir imagen
               <input id="productImageInput" type="file" accept="image/png,image/jpeg,image/webp">
             </label>
+            <label class="file-button mobile-camera-button">
+              Camara movil
+              <input id="mobileCameraInput" type="file" accept="image/*" capture="environment">
+            </label>
+            <button type="button" id="openCameraButton" class="secondary">Abrir camara PC</button>
             <button type="button" id="removeProductImage" class="ghost">Quitar imagen</button>
           </div>
           <div>
@@ -273,6 +278,26 @@
       </div>
       <div class="dialog-actions">
         <button id="closeImageDialog" class="secondary">Cerrar</button>
+      </div>
+    </dialog>
+
+    <dialog id="cameraDialog" class="camera-dialog">
+      <div class="panel-header camera-header">
+        <div>
+          <p class="eyebrow">Camara</p>
+          <h2>Foto del producto</h2>
+        </div>
+        <button id="closeCameraDialog" class="ghost" type="button">Cerrar</button>
+      </div>
+      <div class="camera-stage">
+        <video id="cameraVideo" autoplay playsinline muted></video>
+        <canvas id="cameraCanvas" hidden></canvas>
+        <img id="cameraPreview" alt="" hidden>
+      </div>
+      <div class="camera-actions">
+        <button id="capturePhotoButton" class="primary" type="button">Tomar foto</button>
+        <button id="retakePhotoButton" class="secondary" type="button" hidden>Repetir</button>
+        <button id="confirmPhotoButton" class="primary" type="button" hidden>Confirmar imagen</button>
       </div>
     </dialog>
 

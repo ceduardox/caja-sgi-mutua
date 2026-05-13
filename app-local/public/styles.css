@@ -491,6 +491,37 @@ dialog form,
   justify-content: flex-end;
 }
 
+.camera-dialog {
+  width: min(860px, calc(100vw - 24px));
+}
+
+.camera-header {
+  padding: 16px 18px 0;
+}
+
+.camera-stage {
+  display: grid;
+  place-items: center;
+  padding: 16px 18px;
+  background: #0f1720;
+}
+
+.camera-stage video,
+.camera-stage img {
+  width: 100%;
+  max-height: 68vh;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #000;
+}
+
+.camera-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
 .file-button {
   min-height: 40px;
   display: grid;
@@ -780,6 +811,10 @@ label {
   }
 
   .payment-methods {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-actions {
     grid-template-columns: 1fr;
   }
 }
