@@ -17,6 +17,7 @@ if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
 db.exec(readFileSync(join(ROOT, 'sqlite_schema.sql'), 'utf8'));
+migrateLocalDatabase();
 seedLocalData();
 
 const mimeTypes = {
@@ -84,6 +85,13 @@ function seedLocalData() {
     insert.run(randomUUID(), STORE_ID, 'cat-general', '7750001000029', 'PROD-002', 'Galletas vainilla', 3, 6, 18, 6);
     insert.run(randomUUID(), STORE_ID, 'cat-general', '7750001000036', 'PROD-003', 'Jugo personal', 4, 8, 12, 4);
   }
+}
+
+function migrateLocalDatabase() {
+  const columns = db.prepare('PRAGMA table_info(sales)').all().map((column) => column.name);
+  if (!columns.includes('cash_received')) db.exec('ALTER TABLE sales ADD COLUMN cash_received REAL');
+  if (!columns.includes('cash_change')) db.exec('ALTER TABLE sales ADD COLUMN cash_change REAL');
+  if (!columns.includes('qr_transaction_code')) db.exec('ALTER TABLE sales ADD COLUMN qr_transaction_code TEXT');
 }
 
 async function handleApi(req, res, url) {
@@ -267,7 +275,9 @@ function createSale(input) {
   const openSession = ensureCashSession();
   const saleId = randomUUID();
   const now = new Date().toISOString();
-  const paymentMethod = cleanOptional(input.payment_method ?? input.paymentMethod) || 'cash';
+  const paymentMethod = normalizePaymentMethod(input.payment_method ?? input.paymentMethod);
+  const cashReceived = input.cash_received ?? input.cashReceived;
+  const qrTransactionCode = cleanOptional(input.qr_transaction_code ?? input.qrTransactionCode);
 
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -293,13 +303,27 @@ function createSale(input) {
     });
 
     const total = normalizeMoney(subtotal);
+    const payment = normalizePaymentDetails(paymentMethod, total, cashReceived, qrTransactionCode);
 
     db.prepare(`
       INSERT INTO sales (
         id, store_id, device_id, cash_session_id, user_id, subtotal, total,
-        payment_method, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
-    `).run(saleId, STORE_ID, DEVICE_ID, openSession.id, USER_ID, normalizeMoney(subtotal), total, paymentMethod, now);
+        payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
+    `).run(
+      saleId,
+      STORE_ID,
+      DEVICE_ID,
+      openSession.id,
+      USER_ID,
+      normalizeMoney(subtotal),
+      total,
+      paymentMethod,
+      payment.cash_received,
+      payment.cash_change,
+      payment.qr_transaction_code,
+      now
+    );
 
     const insertItem = db.prepare(`
       INSERT INTO sale_items (
@@ -371,7 +395,7 @@ function ensureCashSession() {
 
 function getSale(id) {
   const sale = db.prepare(`
-    SELECT id, subtotal, discount_total, total, payment_method, status, created_at
+    SELECT id, subtotal, discount_total, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
     FROM sales
     WHERE id = ? AND store_id = ?
   `).get(id, STORE_ID);
@@ -389,7 +413,7 @@ function getSale(id) {
 
 function listSales() {
   return db.prepare(`
-    SELECT id, total, payment_method, status, created_at
+    SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
     FROM sales
     WHERE store_id = ?
     ORDER BY created_at DESC
@@ -478,7 +502,7 @@ function getReports(params) {
   `).all(STORE_ID);
 
   const sales = db.prepare(`
-    SELECT id, total, payment_method, status, created_at
+    SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
     FROM sales
     WHERE store_id = ? AND created_at BETWEEN ? AND ?
     ORDER BY created_at DESC
@@ -573,6 +597,30 @@ function normalizeImage(value) {
   if (!text.startsWith('data:image/')) throw new Error('La imagen debe ser JPG, PNG o WEBP');
   if (text.length > 1_300_000) throw new Error('La imagen optimizada sigue siendo demasiado pesada');
   return text;
+}
+
+function normalizePaymentMethod(value) {
+  const method = String(value || 'cash').trim();
+  if (!['cash', 'qr'].includes(method)) throw new Error('Metodo de pago invalido');
+  return method;
+}
+
+function normalizePaymentDetails(method, total, cashReceived, qrTransactionCode) {
+  if (method === 'cash') {
+    const received = normalizeMoney(cashReceived);
+    if (!Number.isFinite(received) || received < total) throw new Error('El efectivo recibido no cubre el total');
+    return {
+      cash_received: received,
+      cash_change: normalizeMoney(received - total),
+      qr_transaction_code: null
+    };
+  }
+
+  return {
+    cash_received: null,
+    cash_change: null,
+    qr_transaction_code: qrTransactionCode
+  };
 }
 
 function cleanDate(value) {

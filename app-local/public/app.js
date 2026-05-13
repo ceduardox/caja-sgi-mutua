@@ -47,6 +47,16 @@ const els = {
   receiptContent: document.querySelector('#receiptContent'),
   printReceiptButton: document.querySelector('#printReceiptButton'),
   closeReceiptButton: document.querySelector('#closeReceiptButton'),
+  paymentDialog: document.querySelector('#paymentDialog'),
+  paymentForm: document.querySelector('#paymentForm'),
+  closePaymentDialog: document.querySelector('#closePaymentDialog'),
+  paymentTotal: document.querySelector('#paymentTotal'),
+  cashFields: document.querySelector('#cashFields'),
+  qrFields: document.querySelector('#qrFields'),
+  cashReceived: document.querySelector('#cashReceived'),
+  cashChange: document.querySelector('#cashChange'),
+  qrTransactionCode: document.querySelector('#qrTransactionCode'),
+  confirmPaymentButton: document.querySelector('#confirmPaymentButton'),
   imageDialog: document.querySelector('#imageDialog'),
   expandedImage: document.querySelector('#expandedImage'),
   closeImageDialog: document.querySelector('#closeImageDialog'),
@@ -92,7 +102,13 @@ function bindEvents() {
     }
   });
   els.productSearchInput.addEventListener('input', debounce(() => loadProducts(els.productSearchInput.value.trim()), 180));
-  els.checkoutButton.addEventListener('click', checkout);
+  els.checkoutButton.addEventListener('click', openPaymentDialog);
+  els.paymentForm.addEventListener('submit', checkout);
+  els.closePaymentDialog.addEventListener('click', () => els.paymentDialog.close());
+  document.querySelectorAll('input[name="paymentMethod"]').forEach((input) => {
+    input.addEventListener('change', updatePaymentMethodUi);
+  });
+  els.cashReceived.addEventListener('input', updateCashChange);
   els.clearCartButton.addEventListener('click', () => {
     state.cart.clear();
     renderCart();
@@ -356,10 +372,35 @@ function renderCart() {
   els.cartTotal.textContent = money(total);
 }
 
-async function checkout() {
+function openPaymentDialog() {
   const items = [...state.cart.values()];
   if (items.length === 0) {
     showToast('Agrega productos antes de cobrar');
+    return;
+  }
+
+  const total = getCartTotal();
+  els.paymentTotal.textContent = money(total);
+  els.cashReceived.value = total.toFixed(2);
+  els.qrTransactionCode.value = '';
+  document.querySelector('input[name="paymentMethod"][value="cash"]').checked = true;
+  updatePaymentMethodUi();
+  updateCashChange();
+  els.paymentDialog.showModal();
+  els.cashReceived.focus();
+  els.cashReceived.select();
+}
+
+async function checkout(event) {
+  event.preventDefault();
+  const items = [...state.cart.values()];
+  const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
+  const total = getCartTotal();
+  const cashReceived = Number(els.cashReceived.value || 0);
+
+  if (paymentMethod === 'cash' && cashReceived < total) {
+    showToast('El efectivo recibido no cubre el total');
+    els.cashReceived.focus();
     return;
   }
 
@@ -367,7 +408,9 @@ async function checkout() {
     const data = await api('/api/sales', {
       method: 'POST',
       body: JSON.stringify({
-        payment_method: 'cash',
+        payment_method: paymentMethod,
+        cash_received: paymentMethod === 'cash' ? cashReceived : null,
+        qr_transaction_code: paymentMethod === 'qr' ? els.qrTransactionCode.value.trim() : null,
         items: items.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity
@@ -377,11 +420,39 @@ async function checkout() {
     state.lastSale = data.sale;
     state.cart.clear();
     renderCart();
+    els.paymentDialog.close();
     await refreshAll();
     showReceipt(data.sale);
   } catch (error) {
     showToast(error.message);
   }
+}
+
+function updatePaymentMethodUi() {
+  const method = document.querySelector('input[name="paymentMethod"]:checked').value;
+  document.querySelectorAll('.method-card').forEach((card) => {
+    const input = card.querySelector('input');
+    card.classList.toggle('active', input.checked);
+  });
+  els.cashFields.hidden = method !== 'cash';
+  els.qrFields.hidden = method !== 'qr';
+  if (method === 'cash') {
+    els.confirmPaymentButton.textContent = 'Confirmar venta en efectivo';
+    updateCashChange();
+  } else {
+    els.confirmPaymentButton.textContent = 'Confirmar venta por QR';
+  }
+}
+
+function updateCashChange() {
+  const total = getCartTotal();
+  const received = Number(els.cashReceived.value || 0);
+  const change = Math.max(0, received - total);
+  els.cashChange.textContent = money(change);
+}
+
+function getCartTotal() {
+  return [...state.cart.values()].reduce((sum, item) => sum + item.product.sale_price * item.quantity, 0);
 }
 
 function openProductById(id) {
@@ -521,6 +592,7 @@ function showReceipt(sale) {
     <h2>SGI Market Caja</h2>
     <p><strong>Venta:</strong> ${sale.id.slice(0, 8)}</p>
     <p><strong>Fecha:</strong> ${formatDate(sale.created_at)}</p>
+    <p><strong>Pago:</strong> ${paymentLabel(sale.payment_method)}</p>
     ${sale.items.map((item) => `
       <div class="receipt-line">
         <span>${escapeHtml(item.product_name)} x ${item.quantity}</span>
@@ -531,6 +603,13 @@ function showReceipt(sale) {
       <span>Total</span>
       <strong>${money(sale.total)}</strong>
     </div>
+    ${sale.payment_method === 'cash' ? `
+      <div class="receipt-line"><span>Recibido</span><strong>${money(sale.cash_received)}</strong></div>
+      <div class="receipt-line"><span>Cambio</span><strong>${money(sale.cash_change)}</strong></div>
+    ` : ''}
+    ${sale.payment_method === 'qr' && sale.qr_transaction_code ? `
+      <p><strong>QR:</strong> ${escapeHtml(sale.qr_transaction_code)}</p>
+    ` : ''}
     <p>Gracias por su compra.</p>
   `;
   els.receiptDialog.showModal();
@@ -543,8 +622,17 @@ function exportReportSales() {
     return;
   }
   const csv = [
-    ['fecha', 'venta', 'metodo', 'estado', 'total'],
-    ...rows.map((sale) => [sale.created_at, sale.id, sale.payment_method, sale.status, sale.total])
+    ['fecha', 'venta', 'metodo', 'efectivo_recibido', 'cambio', 'codigo_qr', 'estado', 'total'],
+    ...rows.map((sale) => [
+      sale.created_at,
+      sale.id,
+      sale.payment_method,
+      sale.cash_received || '',
+      sale.cash_change || '',
+      sale.qr_transaction_code || '',
+      sale.status,
+      sale.total
+    ])
   ].map((row) => row.map(csvCell).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

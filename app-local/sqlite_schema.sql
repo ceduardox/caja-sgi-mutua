@@ -113,6 +113,9 @@ CREATE TABLE IF NOT EXISTS sales (
   discount_total REAL NOT NULL DEFAULT 0,
   total REAL NOT NULL,
   payment_method TEXT NOT NULL DEFAULT 'cash',
+  cash_received REAL,
+  cash_change REAL,
+  qr_transaction_code TEXT,
   status TEXT NOT NULL CHECK (status IN ('completed', 'void')) DEFAULT 'completed',
   void_reason TEXT,
   voided_by TEXT,
@@ -163,4 +166,3 @@ CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(store_id, barcode);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(store_id, name);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(store_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
-

@@ -522,6 +522,88 @@ label {
   padding: 0 18px 18px;
 }
 
+.payment-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 18px 14px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #e7f6f3;
+}
+
+.payment-total span,
+.change-box span {
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.payment-total strong {
+  font-size: 30px;
+}
+
+.payment-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 18px;
+}
+
+.method-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  cursor: pointer;
+}
+
+.method-card.active {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+  background: #f2fbf9;
+}
+
+.method-card input {
+  width: auto;
+  grid-row: span 2;
+}
+
+.method-card span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.payment-fields {
+  padding: 14px 18px 0;
+}
+
+.change-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff8e6;
+}
+
+.change-box strong {
+  font-size: 24px;
+}
+
+#paymentForm > .primary {
+  width: calc(100% - 36px);
+  margin: 16px 18px 18px;
+}
+
 .receipt {
   font-family: "Courier New", monospace;
 }
@@ -672,6 +754,10 @@ label {
 
   .table-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .payment-methods {
+    grid-template-columns: 1fr;
   }
 }
 

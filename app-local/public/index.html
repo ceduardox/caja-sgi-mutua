@@ -219,6 +219,45 @@
       </div>
     </dialog>
 
+    <dialog id="paymentDialog">
+      <form id="paymentForm" method="dialog">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Cobro</p>
+            <h2>Metodo de pago</h2>
+          </div>
+          <button type="button" id="closePaymentDialog" class="ghost">Cerrar</button>
+        </div>
+        <div class="payment-total">
+          <span>Total a cobrar</span>
+          <strong id="paymentTotal">Bs 0.00</strong>
+        </div>
+        <div class="payment-methods">
+          <label class="method-card active">
+            <input type="radio" name="paymentMethod" value="cash" checked>
+            <strong>Efectivo</strong>
+            <span>Calcula el cambio automaticamente.</span>
+          </label>
+          <label class="method-card">
+            <input type="radio" name="paymentMethod" value="qr">
+            <strong>QR</strong>
+            <span>Registra el codigo de transaccion si existe.</span>
+          </label>
+        </div>
+        <div id="cashFields" class="payment-fields">
+          <label>Efectivo recibido<input id="cashReceived" type="number" min="0" step="0.01"></label>
+          <div class="change-box">
+            <span>Cambio</span>
+            <strong id="cashChange">Bs 0.00</strong>
+          </div>
+        </div>
+        <div id="qrFields" class="payment-fields" hidden>
+          <label>Codigo de transaccion QR opcional<input id="qrTransactionCode" autocomplete="off" placeholder="Ej. 845912, banco, referencia"></label>
+        </div>
+        <button id="confirmPaymentButton" class="primary" type="submit">Confirmar venta</button>
+      </form>
+    </dialog>
+
     <dialog id="imageDialog" class="image-dialog">
       <div class="image-viewer">
         <img id="expandedImage" alt="">
