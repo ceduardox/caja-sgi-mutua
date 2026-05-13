@@ -144,6 +144,26 @@
       <section class="panel">
         <div class="panel-header">
           <div>
+            <p class="eyebrow">Visual</p>
+            <h2>Graficos 3D</h2>
+          </div>
+          <span id="chartsStatus" class="meta">ECharts GL</span>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-box">
+            <h3>Ventas por dia</h3>
+            <div id="sales3dChart" class="chart"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Productos mas vendidos</h3>
+            <div id="products3dChart" class="chart"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
             <p class="eyebrow">Historial</p>
             <h2>Ventas del periodo</h2>
           </div>
@@ -209,6 +229,8 @@
     </dialog>
 
     <div id="toast" class="toast" hidden></div>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts-gl@2/dist/echarts-gl.min.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

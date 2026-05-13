@@ -61,8 +61,14 @@ const els = {
   bestSellersList: document.querySelector('#bestSellersList'),
   lowStockList: document.querySelector('#lowStockList'),
   reportSalesList: document.querySelector('#reportSalesList'),
+  chartsStatus: document.querySelector('#chartsStatus'),
+  sales3dChart: document.querySelector('#sales3dChart'),
+  products3dChart: document.querySelector('#products3dChart'),
   toast: document.querySelector('#toast')
 };
+
+let salesChart;
+let productsChart;
 
 boot();
 
@@ -207,6 +213,8 @@ async function loadReports() {
       <strong>${money(sale.total)}</strong>
     </div>
   `).join('') || '<div class="empty">Sin ventas en este periodo.</div>';
+
+  renderReportCharts(data);
 }
 
 async function handleSearch() {
@@ -547,6 +555,116 @@ function exportReportSales() {
   URL.revokeObjectURL(url);
 }
 
+function renderReportCharts(data) {
+  if (!window.echarts || !els.sales3dChart || !els.products3dChart) {
+    els.chartsStatus.textContent = 'Graficos disponibles con internet';
+    els.sales3dChart.innerHTML = '<div class="empty">Sin libreria de graficos cargada.</div>';
+    els.products3dChart.innerHTML = '<div class="empty">Sin libreria de graficos cargada.</div>';
+    return;
+  }
+
+  els.chartsStatus.textContent = 'Animado';
+  salesChart = salesChart || echarts.init(els.sales3dChart);
+  productsChart = productsChart || echarts.init(els.products3dChart);
+
+  const dayLabels = data.by_day.length ? data.by_day.map((row) => row.day.slice(5)) : [data.from.slice(5)];
+  const dayValues = data.by_day.length ? data.by_day.map((row) => Number(row.total || 0)) : [0];
+  const sales3dData = dayValues.map((value, index) => [index, 0, value]);
+
+  salesChart.setOption({
+    tooltip: {
+      formatter: (params) => `${dayLabels[params.value[0]]}<br>${money(params.value[2])}`
+    },
+    animation: true,
+    animationDuration: 900,
+    animationEasing: 'cubicOut',
+    xAxis3D: {
+      type: 'category',
+      data: dayLabels,
+      axisLabel: { color: '#475467' }
+    },
+    yAxis3D: {
+      type: 'category',
+      data: ['Ventas'],
+      axisLabel: { color: '#475467' }
+    },
+    zAxis3D: {
+      type: 'value',
+      axisLabel: { color: '#475467' }
+    },
+    grid3D: {
+      boxWidth: 120,
+      boxDepth: 28,
+      viewControl: {
+        autoRotate: true,
+        autoRotateSpeed: 5,
+        distance: 160
+      },
+      light: {
+        main: { intensity: 1.2 },
+        ambient: { intensity: 0.35 }
+      }
+    },
+    series: [{
+      type: 'bar3D',
+      data: sales3dData,
+      bevelSize: 0.25,
+      shading: 'lambert',
+      itemStyle: { color: '#0e766f' }
+    }]
+  });
+
+  const top = data.best_sellers.slice(0, 8);
+  const productLabels = top.length ? top.map((item) => trimLabel(item.product_name)) : ['Sin ventas'];
+  const productValues = top.length ? top.map((item) => Number(item.total || 0)) : [0];
+  const product3dData = productValues.map((value, index) => [index, 0, value]);
+
+  productsChart.setOption({
+    tooltip: {
+      formatter: (params) => `${productLabels[params.value[0]]}<br>${money(params.value[2])}`
+    },
+    animation: true,
+    animationDuration: 900,
+    animationEasing: 'cubicOut',
+    xAxis3D: {
+      type: 'category',
+      data: productLabels,
+      axisLabel: { color: '#475467', interval: 0 }
+    },
+    yAxis3D: {
+      type: 'category',
+      data: ['Top'],
+      axisLabel: { color: '#475467' }
+    },
+    zAxis3D: {
+      type: 'value',
+      axisLabel: { color: '#475467' }
+    },
+    grid3D: {
+      boxWidth: 130,
+      boxDepth: 30,
+      viewControl: {
+        autoRotate: true,
+        autoRotateSpeed: 4,
+        distance: 170
+      },
+      light: {
+        main: { intensity: 1.25 },
+        ambient: { intensity: 0.35 }
+      }
+    },
+    series: [{
+      type: 'bar3D',
+      data: product3dData,
+      bevelSize: 0.25,
+      shading: 'lambert',
+      itemStyle: {
+        color: (params) => ['#0e766f', '#175cd3', '#b54708', '#7a2e99'][params.dataIndex % 4]
+      }
+    }]
+  });
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -598,6 +716,11 @@ function formatDate(value) {
 function paymentLabel(value) {
   const labels = { cash: 'Efectivo', card: 'Tarjeta', qr: 'QR', transfer: 'Transferencia' };
   return labels[value] || value;
+}
+
+function trimLabel(value) {
+  const text = String(value || '');
+  return text.length > 16 ? `${text.slice(0, 15)}.` : text;
 }
 
 function initials(value) {
