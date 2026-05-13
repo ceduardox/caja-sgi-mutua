@@ -1,0 +1,59 @@
+SINCRONIZACION OFFLINE - SGI MARKET CAJA
+
+Principio:
+La caja nunca espera a Railway para vender. Primero guarda localmente y luego
+sincroniza cuando exista internet.
+
+Flujo de una venta:
+1. Cajero escanea o busca producto.
+2. La app consulta SQLite local.
+3. Al confirmar la venta:
+   - crea registro en sales.
+   - crea sale_items.
+   - descuenta stock en products.
+   - crea inventory_movements.
+   - crea evento pendiente en sync_queue.
+4. Imprime o muestra recibo.
+5. Si hay internet, intenta sincronizar.
+6. Si no hay internet, el evento queda pendiente.
+
+Frecuencia inicial:
+- Intentar sincronizar cada 10 a 30 segundos si hay internet.
+- Reintentar eventos fallidos con espera progresiva.
+- Mostrar al usuario: conectado, sin conexion, sincronizando, pendiente o error.
+
+Identificadores:
+- Cada tienda tendra store_id.
+- Cada PC tendra device_id.
+- Cada venta tendra id unico generado localmente.
+- La nube debe aceptar eventos idempotentes: si llega dos veces la misma venta,
+  no debe duplicarla.
+
+Conflictos:
+- Si una venta fue hecha offline, la venta se respeta.
+- Si el stock cloud queda negativo, se reporta como alerta de inventario.
+- La nube debe marcar conflictos para revision, no borrar ventas locales.
+
+Licencias:
+- La app guarda localmente el ultimo estado de licencia.
+- Si no hay internet, permite operar durante el periodo de gracia configurado.
+- Si la licencia vencio fuera de gracia, puede bloquear nuevas ventas pero debe
+  permitir consultar historial y hacer backup.
+
+Datos que se sincronizan:
+- Productos creados/editados.
+- Ventas.
+- Anulaciones.
+- Movimientos de stock.
+- Cierres de caja.
+- Usuarios y permisos basicos.
+- Logs de errores importantes.
+
+Datos que NO dependen de sincronizacion para operar:
+- Catalogo local de productos.
+- Precios locales.
+- Stock local.
+- Venta local.
+- Impresion de recibo.
+- Cierre de caja.
+

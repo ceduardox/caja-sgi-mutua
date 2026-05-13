@@ -1,0 +1,134 @@
+SGI MARKET MUTUALISTA CAJA
+Guia base del sistema
+
+Nombre del sistema:
+- Nombre completo: SGI Market Mutualista Caja
+- Nombre corto recomendado: SGI Market Caja
+- Abreviacion interna: SGI Caja
+- Repositorio destino: https://github.com/ceduardox/caja-sgi-mutua.git
+
+Objetivo:
+Crear un sistema de ventas para tienda que funcione instalado en una PC Windows,
+pueda vender aunque no haya internet o WiFi, use lector de codigo de barras,
+administre productos e inventario, y sincronice con una nube central cuando haya
+conexion para reportes, backups, licencias y suscripciones.
+
+Decision principal:
+El sistema sera local-first. La caja debe operar localmente y no depender de
+Railway ni de internet para registrar ventas.
+
+Arquitectura decidida:
+1. App instalada en PC Windows
+   - Tecnologia recomendada: Tauri + frontend web moderno.
+   - Alternativa si se necesita avanzar mas rapido: Electron.
+   - El usuario final instalara un .exe.
+   - No deberia necesitar instalar Node.js, PostgreSQL, Excel ni herramientas tecnicas.
+
+2. Base de datos local
+   - Tecnologia: SQLite.
+   - Guarda productos, codigos de barra, precios, stock, ventas, caja, usuarios
+     y cola de sincronizacion.
+   - Permite vender sin internet.
+
+3. Lector de codigo de barras
+   - Soporte inicial para lectores USB que funcionan como teclado.
+   - El flujo sera: enfocar campo de venta, escanear codigo, buscar producto y
+     agregarlo al carrito.
+
+4. Ventas e inventario
+   - Cada venta se registra primero localmente.
+   - El stock se descuenta en la PC de caja.
+   - Se deben registrar movimientos de inventario, no solo un numero final de stock.
+   - Debe existir anulacion/control de ventas con permisos y auditoria.
+
+5. Recibos e impresion
+   - Primera version: recibo imprimible desde la app usando la impresora instalada
+     en Windows.
+   - Luego se probaran impresoras termicas especificas si hace falta.
+
+6. Sincronizacion con nube
+   - Cuando haya internet, la app subira ventas, productos editados, cierres de caja,
+     movimientos de stock y errores pendientes.
+   - Si no hay internet, todo queda en cola local.
+   - Al volver internet, se sincroniza.
+   - La nube no debe ser obligatoria para vender.
+
+7. Backend cloud
+   - Tecnologia recomendada: Node.js/Express + PostgreSQL.
+   - Hosting inicial: Railway.
+   - Railway se usara para API, panel central, licencias, reportes, backups y
+     sincronizacion.
+   - GitHub sera la fuente del codigo y se conectara a Railway para despliegue.
+
+8. Panel administrador central
+   - Panel para el dueno del sistema.
+   - Crear tiendas/clientes.
+   - Ver estado de suscripcion.
+   - Activar, suspender o renovar licencias.
+   - Ver tiendas sincronizadas, errores, backups y actividad.
+   - Periodo de gracia recomendado: 3 a 7 dias si una tienda se retrasa en pago.
+
+9. Panel del dueno de la tienda
+   - Acceso desde celular como web/PWA.
+   - Ver ventas del dia casi en tiempo real cuando hay internet.
+   - Ver productos mas vendidos, stock bajo, cierres de caja y cajeros.
+   - Si la tienda esta sin internet, muestra la ultima informacion sincronizada.
+
+10. Notificaciones
+   - OneSignal puede usarse para alertas, no para operar la venta.
+   - Alertas posibles: stock bajo, pago vencido, cierre pendiente, error de
+     sincronizacion, resumen diario.
+
+11. Recursos de Railway
+   - El consumo debe ser bajo al inicio porque la venta ocurre en la PC local.
+   - Railway solo procesa sincronizacion, reportes, licencias y paneles.
+   - Para ahorrar recursos: sincronizacion cada 10 a 30 segundos, reportes
+     resumidos, paginacion y compresion de imagenes.
+
+12. Productos
+   - El sistema debe soportar 500+ productos sin problema.
+   - Campos iniciales: nombre, codigo de barras/SKU, categoria, precio venta,
+     costo, stock, stock minimo, descripcion, imagen, activo/inactivo.
+   - Las imagenes deben comprimirse.
+
+Fases de desarrollo:
+Fase 1 - MVP local de caja
+- App instalada o prototipo local.
+- Productos CRUD.
+- Venta por codigo de barras y busqueda.
+- Carrito.
+- Descuento de stock.
+- Cierre de caja.
+- Recibo imprimible.
+- Usuarios basicos: admin y cajero.
+- Backup local.
+
+Fase 2 - Sincronizacion
+- Cola local de eventos pendientes.
+- API cloud.
+- Sincronizacion de productos, ventas, stock y cierres.
+- Manejo de errores y reintentos.
+- Reporte de ultima sincronizacion.
+
+Fase 3 - SaaS y licencias
+- Panel central del propietario del sistema.
+- Tiendas/clientes.
+- Planes y suscripciones.
+- Estados: trial, active, past_due, suspended, cancelled.
+- Periodo de gracia.
+- Notificaciones.
+- Backups cloud.
+
+Fase 4 - Escalamiento
+- Multi-sucursal.
+- Varias cajas por tienda.
+- Actualizaciones automaticas.
+- Roles avanzados.
+- Auditoria completa.
+- Integraciones contables/fiscales si se necesitan.
+
+Regla tecnica importante:
+La nube gobierna licencias, reportes y backups; la tienda opera localmente.
+Nunca bloquear la venta diaria solo porque Railway, internet o OneSignal fallen,
+salvo que la licencia este vencida fuera del periodo de gracia definido.
+

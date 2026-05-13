@@ -1,0 +1,56 @@
+ALCANCE MVP - SGI MARKET CAJA
+
+Objetivo de la primera version:
+Tener una caja funcional para una tienda que permita vender sin internet,
+descontar stock y emitir recibos imprimibles.
+
+Modulos iniciales:
+1. Productos
+   - Crear, editar y desactivar productos.
+   - Codigo de barras o SKU.
+   - Nombre.
+   - Categoria.
+   - Precio de venta.
+   - Costo.
+   - Stock actual.
+   - Stock minimo.
+   - Imagen opcional.
+
+2. Caja y ventas
+   - Buscar producto por codigo de barras.
+   - Buscar producto por nombre.
+   - Agregar al carrito.
+   - Cambiar cantidad.
+   - Registrar venta.
+   - Descontar stock.
+   - Imprimir recibo.
+
+3. Usuarios
+   - Admin.
+   - Cajero.
+   - Permisos basicos.
+
+4. Cierre de caja
+   - Total vendido.
+   - Cantidad de ventas.
+   - Ventas anuladas.
+   - Usuario responsable.
+   - Fecha y hora de apertura/cierre.
+
+5. Offline
+   - Todo debe funcionar sin internet.
+   - Las ventas quedan guardadas en SQLite.
+
+6. Sincronizacion posterior
+   - Crear cola de eventos pendientes.
+   - Subir ventas y cierres cuando haya internet.
+   - Mostrar ultima sincronizacion.
+
+No incluido en el MVP inicial:
+- Multi-sucursal.
+- Varias cajas conectadas al mismo tiempo.
+- Facturacion fiscal.
+- Integraciones contables.
+- Cobro automatico de suscripciones.
+- Actualizaciones automaticas.
+
