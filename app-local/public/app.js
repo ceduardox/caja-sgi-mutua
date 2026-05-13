@@ -97,6 +97,7 @@ let capturedCameraImage;
 let waitingProductBarcodeScan = false;
 let productBarcodeBuffer = '';
 let productBarcodeTimer;
+let chartsResizeObserver;
 
 boot();
 
@@ -173,6 +174,12 @@ function bindEvents() {
   }, true);
   els.loadReportsButton.addEventListener('click', loadReports);
   els.exportSalesButton.addEventListener('click', exportReportSales);
+  window.addEventListener('resize', debounce(resizeCharts, 120));
+  if (window.ResizeObserver) {
+    chartsResizeObserver = new ResizeObserver(() => resizeCharts());
+    chartsResizeObserver.observe(els.sales3dChart);
+    chartsResizeObserver.observe(els.products3dChart);
+  }
 }
 
 async function refreshAll() {
@@ -186,7 +193,9 @@ function showView(viewId) {
     document.querySelector('.tab[data-view="productsView"]')?.classList.remove('attention');
   }
   if (viewId === 'posView') els.scanInput.focus();
-  if (viewId === 'reportsView') loadReports();
+  if (viewId === 'reportsView') {
+    loadReports().then(() => window.setTimeout(resizeCharts, 80));
+  }
 }
 
 async function checkHealth() {
@@ -875,8 +884,10 @@ function renderReportCharts(data) {
   }
 
   els.chartsStatus.textContent = 'Animado';
-  salesChart = salesChart || echarts.init(els.sales3dChart);
-  productsChart = productsChart || echarts.init(els.products3dChart);
+  ensureChartSize(els.sales3dChart);
+  ensureChartSize(els.products3dChart);
+  salesChart = salesChart || echarts.init(els.sales3dChart, null, { renderer: 'canvas' });
+  productsChart = productsChart || echarts.init(els.products3dChart, null, { renderer: 'canvas' });
 
   const dayLabels = data.by_day.length ? data.by_day.map((row) => row.day.slice(5)) : [data.from.slice(5)];
   const dayValues = data.by_day.length ? data.by_day.map((row) => Number(row.total || 0)) : [0];
@@ -904,12 +915,18 @@ function renderReportCharts(data) {
       axisLabel: { color: '#475467' }
     },
     grid3D: {
-      boxWidth: 120,
-      boxDepth: 28,
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      boxWidth: 150,
+      boxHeight: 70,
+      boxDepth: 38,
       viewControl: {
         autoRotate: true,
         autoRotateSpeed: 5,
-        distance: 160
+        distance: 185,
+        center: [0, 0, -8]
       },
       light: {
         main: { intensity: 1.2 },
@@ -952,12 +969,18 @@ function renderReportCharts(data) {
       axisLabel: { color: '#475467' }
     },
     grid3D: {
-      boxWidth: 130,
-      boxDepth: 30,
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      boxWidth: 150,
+      boxHeight: 72,
+      boxDepth: 40,
       viewControl: {
         autoRotate: true,
         autoRotateSpeed: 4,
-        distance: 170
+        distance: 190,
+        center: [0, 0, -8]
       },
       light: {
         main: { intensity: 1.25 },
@@ -974,6 +997,24 @@ function renderReportCharts(data) {
       }
     }]
   });
+
+  window.requestAnimationFrame(() => {
+    resizeCharts();
+    window.setTimeout(resizeCharts, 160);
+  });
+}
+
+function ensureChartSize(element) {
+  const box = element.getBoundingClientRect();
+  if (box.width < 80) {
+    element.style.minWidth = '320px';
+  }
+}
+
+function resizeCharts() {
+  if (!document.querySelector('#reportsView')?.classList.contains('active')) return;
+  salesChart?.resize();
+  productsChart?.resize();
 }
 
 async function api(path, options = {}) {
