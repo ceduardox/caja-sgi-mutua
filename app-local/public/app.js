@@ -95,6 +95,8 @@ let productsChart;
 let cameraStream;
 let capturedCameraImage;
 let waitingProductBarcodeScan = false;
+let productBarcodeBuffer = '';
+let productBarcodeTimer;
 
 boot();
 
@@ -140,6 +142,7 @@ function bindEvents() {
       finishProductBarcodeScan();
     }
   });
+  document.addEventListener('keydown', handleGlobalBarcodeScan, true);
   els.closeProductDialog.addEventListener('click', () => els.productDialog.close());
   els.productForm.addEventListener('submit', saveProduct);
   els.productImageInput.addEventListener('change', handleImageInput);
@@ -532,6 +535,7 @@ function openProductDialog(product = null, options = {}) {
 
 function startProductBarcodeScan() {
   waitingProductBarcodeScan = true;
+  productBarcodeBuffer = '';
   els.productBarcode.value = '';
   setBarcodeScanState(true);
   els.productBarcode.focus();
@@ -544,12 +548,14 @@ function handleProductBarcodeInput() {
 }
 
 function finishProductBarcodeScan() {
-  const code = els.productBarcode.value.trim();
+  const code = (els.productBarcode.value || productBarcodeBuffer).trim();
   if (!code) {
     startProductBarcodeScan();
     return;
   }
+  els.productBarcode.value = code;
   waitingProductBarcodeScan = false;
+  productBarcodeBuffer = '';
   setBarcodeScanState(false);
   const next = els.productName.value.trim() ? els.productSalePrice : els.productName;
   next.focus();
@@ -564,6 +570,41 @@ function setBarcodeScanState(active) {
   els.barcodeScanHint.textContent = active
     ? 'Apunta el lector al codigo de barras. Se rellenara aqui automaticamente.'
     : 'Presiona Escanear y lee el codigo del producto.';
+}
+
+function handleGlobalBarcodeScan(event) {
+  if (!waitingProductBarcodeScan) return;
+  if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    finishProductBarcodeScan();
+    return;
+  }
+
+  if (event.key === 'Backspace') {
+    productBarcodeBuffer = productBarcodeBuffer.slice(0, -1);
+    els.productBarcode.value = productBarcodeBuffer;
+    handleProductBarcodeInput();
+    return;
+  }
+
+  if (event.key.length !== 1) return;
+
+  const activeIsBarcode = document.activeElement === els.productBarcode;
+  if (!activeIsBarcode) {
+    event.preventDefault();
+    productBarcodeBuffer += event.key;
+    els.productBarcode.value = productBarcodeBuffer;
+    els.productBarcode.focus();
+    handleProductBarcodeInput();
+  } else {
+    window.clearTimeout(productBarcodeTimer);
+    productBarcodeTimer = window.setTimeout(() => {
+      productBarcodeBuffer = els.productBarcode.value;
+      handleProductBarcodeInput();
+    }, 20);
+  }
 }
 
 async function saveProduct(event) {
