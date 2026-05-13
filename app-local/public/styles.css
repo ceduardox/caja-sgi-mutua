@@ -101,6 +101,11 @@ button {
   color: #111827;
 }
 
+.tab.attention {
+  background: var(--amber);
+  color: #3a2600;
+}
+
 .dot {
   width: 10px;
   height: 10px;
@@ -162,6 +167,11 @@ button {
   gap: 8px;
   color: var(--muted);
   font-weight: 700;
+}
+
+.scan-box small {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .search-line {
@@ -635,6 +645,19 @@ label {
 
 .small {
   width: auto;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
 }
 
 .date-filters {

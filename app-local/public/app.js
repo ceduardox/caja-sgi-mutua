@@ -42,6 +42,8 @@ const els = {
   productDescription: document.querySelector('#productDescription'),
   productActive: document.querySelector('#productActive'),
   newProductButton: document.querySelector('#newProductButton'),
+  scanNewProductButton: document.querySelector('#scanNewProductButton'),
+  focusBarcodeButton: document.querySelector('#focusBarcodeButton'),
   closeProductDialog: document.querySelector('#closeProductDialog'),
   receiptDialog: document.querySelector('#receiptDialog'),
   receiptContent: document.querySelector('#receiptContent'),
@@ -98,7 +100,7 @@ function bindEvents() {
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      addBestMatch();
+      addScannedProduct();
     }
   });
   els.productSearchInput.addEventListener('input', debounce(() => loadProducts(els.productSearchInput.value.trim()), 180));
@@ -115,6 +117,20 @@ function bindEvents() {
     els.scanInput.focus();
   });
   els.newProductButton.addEventListener('click', () => openProductDialog());
+  els.scanNewProductButton.addEventListener('click', () => openProductDialog(null, { focusBarcode: true }));
+  els.focusBarcodeButton.addEventListener('click', () => {
+    els.productBarcode.focus();
+    els.productBarcode.select();
+  });
+  els.productBarcode.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const next = els.productName.value.trim() ? els.productSalePrice : els.productName;
+      next.focus();
+      next.select?.();
+      showToast('Codigo capturado');
+    }
+  });
   els.closeProductDialog.addEventListener('click', () => els.productDialog.close());
   els.productForm.addEventListener('submit', saveProduct);
   els.productImageInput.addEventListener('change', handleImageInput);
@@ -147,6 +163,9 @@ async function refreshAll() {
 function showView(viewId) {
   els.tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.view === viewId));
   els.views.forEach((view) => view.classList.toggle('active', view.id === viewId));
+  if (viewId === 'productsView') {
+    document.querySelector('.tab[data-view="productsView"]')?.classList.remove('attention');
+  }
   if (viewId === 'posView') els.scanInput.focus();
   if (viewId === 'reportsView') loadReports();
 }
@@ -242,15 +261,27 @@ async function handleSearch() {
   await loadProducts(query);
 }
 
-function addBestMatch() {
+function addScannedProduct() {
   const query = els.scanInput.value.trim().toLowerCase();
   if (!query) return;
 
   const exact = state.products.find((product) =>
     [product.barcode, product.sku].filter(Boolean).some((value) => String(value).toLowerCase() === query)
   );
-  const match = exact || state.products[0];
-  if (match) addToCart(match);
+  if (exact) {
+    addToCart(exact);
+    return;
+  }
+
+  if (state.products.length === 1) {
+    addToCart(state.products[0]);
+    return;
+  }
+
+  const activeTab = document.querySelector('.tab[data-view="productsView"]');
+  showToast('Producto no encontrado. Puedes crearlo desde Productos.');
+  els.scanInput.select();
+  if (activeTab) activeTab.classList.add('attention');
 }
 
 function renderSearchResults(products) {
@@ -460,7 +491,7 @@ function openProductById(id) {
   openProductDialog(product);
 }
 
-function openProductDialog(product = null) {
+function openProductDialog(product = null, options = {}) {
   els.productDialogTitle.textContent = product ? 'Editar producto' : 'Nuevo producto';
   els.productId.value = product?.id || '';
   els.productName.value = product?.name || '';
@@ -475,7 +506,13 @@ function openProductDialog(product = null) {
   els.productImageInput.value = '';
   setProductImage(product?.image_path || null);
   els.productDialog.showModal();
-  els.productName.focus();
+  if (options.focusBarcode) {
+    els.productBarcode.focus();
+    els.productBarcode.select();
+    showToast('Escanea el codigo del producto');
+  } else {
+    els.productName.focus();
+  }
 }
 
 async function saveProduct(event) {
