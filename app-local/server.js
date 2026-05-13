@@ -142,13 +142,18 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/reports') {
+    sendJson(res, 200, getReports(url.searchParams));
+    return;
+  }
+
   sendJson(res, 404, { error: 'Ruta no encontrada' });
 }
 
 function listProducts(q = '') {
   if (!q) {
     return db.prepare(`
-      SELECT id, barcode, sku, name, cost_price, sale_price, stock, min_stock, active, updated_at
+      SELECT id, barcode, sku, name, cost_price, sale_price, stock, min_stock, image_path, active, updated_at
       FROM products
       WHERE store_id = ?
       ORDER BY active DESC, name ASC
@@ -158,7 +163,7 @@ function listProducts(q = '') {
 
   const needle = `%${q}%`;
   return db.prepare(`
-    SELECT id, barcode, sku, name, cost_price, sale_price, stock, min_stock, active, updated_at
+    SELECT id, barcode, sku, name, cost_price, sale_price, stock, min_stock, image_path, active, updated_at
     FROM products
     WHERE store_id = ?
       AND (name LIKE ? OR barcode LIKE ? OR sku LIKE ?)
@@ -174,8 +179,8 @@ function createProduct(input) {
   db.prepare(`
     INSERT INTO products (
       id, store_id, category_id, barcode, sku, name, description, cost_price,
-      sale_price, stock, min_stock, active
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sale_price, stock, min_stock, image_path, active
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     product.id,
     STORE_ID,
@@ -188,6 +193,7 @@ function createProduct(input) {
     product.sale_price,
     product.stock,
     product.min_stock,
+    product.image_path,
     product.active
   );
 
@@ -202,7 +208,7 @@ function updateProduct(id, input) {
   db.prepare(`
     UPDATE products
     SET barcode = ?, sku = ?, name = ?, description = ?, cost_price = ?,
-        sale_price = ?, stock = ?, min_stock = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+        sale_price = ?, stock = ?, min_stock = ?, image_path = ?, active = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND store_id = ?
   `).run(
     product.barcode,
@@ -213,6 +219,7 @@ function updateProduct(id, input) {
     product.sale_price,
     product.stock,
     product.min_stock,
+    product.image_path,
     product.active,
     id,
     STORE_ID
@@ -240,13 +247,14 @@ function normalizeProduct(input) {
     sale_price: normalizeMoney(salePrice),
     stock,
     min_stock: Math.max(0, Number.parseInt(input.min_stock ?? input.minStock ?? 0, 10) || 0),
+    image_path: normalizeImage(input.image_path ?? input.imagePath),
     active: input.active === false || input.active === 0 ? 0 : 1
   };
 }
 
 function getProduct(id) {
   return db.prepare(`
-    SELECT id, barcode, sku, name, description, cost_price, sale_price, stock, min_stock, active, updated_at
+    SELECT id, barcode, sku, name, description, cost_price, sale_price, stock, min_stock, image_path, active, updated_at
     FROM products
     WHERE id = ? AND store_id = ?
   `).get(id, STORE_ID);
@@ -266,7 +274,7 @@ function createSale(input) {
     let subtotal = 0;
     const preparedItems = items.map((item) => {
       const product = db.prepare(`
-        SELECT id, barcode, name, sale_price, stock
+        SELECT id, barcode, name, cost_price, sale_price, stock
         FROM products
         WHERE id = ? AND store_id = ? AND active = 1
       `).get(item.product_id ?? item.productId, STORE_ID);
@@ -416,6 +424,88 @@ function getSummary() {
   };
 }
 
+function getReports(params) {
+  const today = new Date().toISOString().slice(0, 10);
+  const from = cleanDate(params.get('from')) || today;
+  const to = cleanDate(params.get('to')) || today;
+  const fromStamp = `${from}T00:00:00`;
+  const toStamp = `${to}T23:59:59`;
+
+  const totals = db.prepare(`
+    SELECT
+      COUNT(DISTINCT s.id) AS sales_count,
+      COALESCE(SUM(si.quantity), 0) AS units_sold,
+      COALESCE(SUM(si.line_total), 0) AS revenue,
+      COALESCE(SUM((si.unit_price - COALESCE(p.cost_price, 0)) * si.quantity), 0) AS gross_profit
+    FROM sales s
+    JOIN sale_items si ON si.sale_id = s.id
+    LEFT JOIN products p ON p.id = si.product_id
+    WHERE s.store_id = ?
+      AND s.status = 'completed'
+      AND s.created_at BETWEEN ? AND ?
+  `).get(STORE_ID, fromStamp, toStamp);
+
+  const byDay = db.prepare(`
+    SELECT substr(s.created_at, 1, 10) AS day, COUNT(*) AS sales_count, COALESCE(SUM(s.total), 0) AS total
+    FROM sales s
+    WHERE s.store_id = ? AND s.status = 'completed' AND s.created_at BETWEEN ? AND ?
+    GROUP BY substr(s.created_at, 1, 10)
+    ORDER BY day ASC
+  `).all(STORE_ID, fromStamp, toStamp);
+
+  const bestSellers = db.prepare(`
+    SELECT
+      si.product_id,
+      si.product_name,
+      COALESCE(SUM(si.quantity), 0) AS quantity,
+      COALESCE(SUM(si.line_total), 0) AS total,
+      COALESCE(SUM((si.unit_price - COALESCE(p.cost_price, 0)) * si.quantity), 0) AS gross_profit
+    FROM sales s
+    JOIN sale_items si ON si.sale_id = s.id
+    LEFT JOIN products p ON p.id = si.product_id
+    WHERE s.store_id = ? AND s.status = 'completed' AND s.created_at BETWEEN ? AND ?
+    GROUP BY si.product_id, si.product_name
+    ORDER BY quantity DESC, total DESC
+    LIMIT 10
+  `).all(STORE_ID, fromStamp, toStamp);
+
+  const lowStock = db.prepare(`
+    SELECT id, name, barcode, sku, stock, min_stock, sale_price, image_path
+    FROM products
+    WHERE store_id = ? AND active = 1 AND stock <= min_stock
+    ORDER BY stock ASC, name ASC
+    LIMIT 50
+  `).all(STORE_ID);
+
+  const sales = db.prepare(`
+    SELECT id, total, payment_method, status, created_at
+    FROM sales
+    WHERE store_id = ? AND created_at BETWEEN ? AND ?
+    ORDER BY created_at DESC
+    LIMIT 100
+  `).all(STORE_ID, fromStamp, toStamp);
+
+  return {
+    from,
+    to,
+    totals: {
+      sales_count: totals.sales_count,
+      units_sold: totals.units_sold,
+      revenue: normalizeMoney(totals.revenue),
+      gross_profit: normalizeMoney(totals.gross_profit),
+      margin_percent: totals.revenue > 0 ? normalizeMoney((totals.gross_profit / totals.revenue) * 100) : 0
+    },
+    by_day: byDay.map((row) => ({ ...row, total: normalizeMoney(row.total) })),
+    best_sellers: bestSellers.map((row) => ({
+      ...row,
+      total: normalizeMoney(row.total),
+      gross_profit: normalizeMoney(row.gross_profit)
+    })),
+    low_stock: lowStock,
+    sales
+  };
+}
+
 function enqueueSync(entityType, entityId, action, payload) {
   db.prepare(`
     INSERT INTO sync_queue (
@@ -475,6 +565,19 @@ function sendText(res, status, body) {
 function cleanOptional(value) {
   const text = String(value ?? '').trim();
   return text || null;
+}
+
+function normalizeImage(value) {
+  const text = cleanOptional(value);
+  if (!text) return null;
+  if (!text.startsWith('data:image/')) throw new Error('La imagen debe ser JPG, PNG o WEBP');
+  if (text.length > 900_000) throw new Error('La imagen es demasiado pesada');
+  return text;
+}
+
+function cleanDate(value) {
+  const text = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 function normalizeMoney(value) {
