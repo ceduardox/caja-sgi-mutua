@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SGI Market Caja</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Mutualista</p>
+        <h1>SGI Market Caja</h1>
+      </div>
+      <div class="status">
+        <span id="connectionDot" class="dot"></span>
+        <span id="connectionText">Local</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel sale-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Venta</p>
+            <h2>Caja principal</h2>
+          </div>
+          <button id="clearCartButton" class="ghost">Limpiar</button>
+        </div>
+
+        <label class="scan-box">
+          <span>Escanear o buscar producto</span>
+          <input id="scanInput" autocomplete="off" placeholder="Codigo de barras, SKU o nombre">
+        </label>
+
+        <div id="searchResults" class="search-results"></div>
+
+        <div class="cart">
+          <div class="cart-head">
+            <span>Producto</span>
+            <span>Cant.</span>
+            <span>Total</span>
+          </div>
+          <div id="cartItems" class="cart-items"></div>
+        </div>
+
+        <div class="totals">
+          <span>Total</span>
+          <strong id="cartTotal">Bs 0.00</strong>
+        </div>
+
+        <button id="checkoutButton" class="primary">Cobrar venta</button>
+      </section>
+
+      <aside class="side">
+        <section class="panel summary-panel">
+          <p class="eyebrow">Hoy</p>
+          <div class="summary-grid">
+            <div>
+              <span>Vendido</span>
+              <strong id="todayTotal">Bs 0.00</strong>
+            </div>
+            <div>
+              <span>Ventas</span>
+              <strong id="todayCount">0</strong>
+            </div>
+            <div>
+              <span>Stock bajo</span>
+              <strong id="lowStock">0</strong>
+            </div>
+            <div>
+              <span>Pendiente nube</span>
+              <strong id="pendingSync">0</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Inventario</p>
+              <h2>Productos</h2>
+            </div>
+            <button id="newProductButton" class="secondary">Nuevo</button>
+          </div>
+          <div id="productList" class="product-list"></div>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow">Ventas recientes</p>
+          <div id="salesList" class="sales-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <dialog id="productDialog">
+      <form id="productForm" method="dialog">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Producto</p>
+            <h2 id="productDialogTitle">Nuevo producto</h2>
+          </div>
+          <button type="button" id="closeProductDialog" class="ghost">Cerrar</button>
+        </div>
+        <input type="hidden" id="productId">
+        <div class="form-grid">
+          <label>Nombre<input id="productName" required></label>
+          <label>Codigo de barras<input id="productBarcode"></label>
+          <label>SKU<input id="productSku"></label>
+          <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required></label>
+          <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01"></label>
+          <label>Stock<input id="productStock" type="number" min="0" step="1" required></label>
+          <label>Stock minimo<input id="productMinStock" type="number" min="0" step="1"></label>
+          <label class="checkbox"><input id="productActive" type="checkbox" checked> Activo</label>
+        </div>
+        <label>Descripcion<textarea id="productDescription" rows="3"></textarea></label>
+        <button class="primary" type="submit">Guardar producto</button>
+      </form>
+    </dialog>
+
+    <dialog id="receiptDialog">
+      <div id="receiptContent" class="receipt"></div>
+      <div class="dialog-actions">
+        <button id="printReceiptButton" class="primary">Imprimir</button>
+        <button id="closeReceiptButton" class="secondary">Cerrar</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

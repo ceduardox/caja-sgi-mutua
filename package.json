@@ -1,0 +1,13 @@
+{
+  "name": "sgi-market-caja",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SGI Market Caja local-first POS",
+  "scripts": {
+    "start": "node app-local/server.js",
+    "check": "node --check app-local/server.js && node --check app-local/public/app.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

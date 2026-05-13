@@ -1,0 +1,6 @@
+node_modules/
+app-local/data/
+*.log
+.env
+.env.*
+!.env.example
