@@ -291,7 +291,7 @@ function applySession(user, store) {
   state.activeStore = store || null;
   els.currentUserLabel.textContent = isGlobalAdmin(user.role)
     ? `${user.name} - Administrador general`
-    : `${user.name} - ${user.store_name || 'Sin sucursal'}`;
+    : `${user.name} - ${store?.name || user.store_name || 'Sin sucursal'}`;
   els.activeStoreControl.hidden = !isGlobalAdmin(user.role);
   els.logoutButton.hidden = false;
   if (isGlobalAdmin(user.role) && store) {
@@ -556,6 +556,10 @@ async function saveUser(event) {
 }
 
 function showView(viewId) {
+  if (!canAccessView(state.user?.role, viewId)) {
+    showToast('No tienes permiso para abrir este modulo');
+    viewId = 'posView';
+  }
   els.tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.view === viewId));
   els.views.forEach((view) => view.classList.toggle('active', view.id === viewId));
   if (viewId === 'productsView') {
