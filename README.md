@@ -23,13 +23,28 @@ docs/            Documentacion funcional y tecnica
 
 ## Stack objetivo
 
-- App local: Tauri + interfaz web
+- App local: Electron + interfaz web
 - Base local: SQLite
 - Cloud: Node.js/Express + PostgreSQL
 - Hosting cloud: Railway
 - Repositorio: https://github.com/ceduardox/caja-sgi-mutua.git
 
+## Instalador Windows
+
+```bash
+npm.cmd install
+npm.cmd run dist
+```
+
+El instalador queda en:
+
+```text
+dist\SGI Market Caja Setup 0.1.0.exe
+```
+
+En la app instalada, la base local se guarda en AppData para permitir actualizar
+instalando encima sin perder productos, ventas ni auditoria.
+
 ## Regla principal
 
 La tienda opera localmente. Railway no debe ser necesario para registrar ventas.
-

@@ -1,0 +1,36 @@
+INSTALADOR WINDOWS - SGI MARKET CAJA
+
+Objetivo:
+Instalar la caja en cada PC de sucursal con un .exe, sin pedir al usuario que
+instale Node.js, SQLite, PostgreSQL ni herramientas tecnicas.
+
+Comandos:
+1. Instalar dependencias del proyecto:
+   npm.cmd install
+
+2. Generar instalador:
+   npm.cmd run dist
+
+3. Archivo generado:
+   dist\SGI Market Caja Setup 0.1.0.exe
+
+Datos locales:
+- En desarrollo con npm.cmd start:
+  app-local\data\sgi-market-caja.sqlite
+
+- En app instalada con Electron:
+  %APPDATA%\SGI Market Caja\data\sgi-market-caja.sqlite
+
+Regla importante:
+El instalador actualiza el programa, pero no debe borrar la base SQLite local.
+Por eso los datos reales viven en AppData, fuera de la carpeta del programa.
+
+Actualizaciones:
+- Primera etapa: generar un nuevo instalador y ejecutarlo encima del anterior.
+- La base local queda en AppData y se conserva.
+- Segunda etapa futura: agregar auto-update con GitHub Releases o servidor propio.
+
+Notas:
+- El build actual no firma digitalmente el ejecutable.
+- Windows puede mostrar advertencia de SmartScreen hasta que se firme el .exe.
+- Para una version comercial conviene agregar icono propio y certificado de firma.

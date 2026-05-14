@@ -3,11 +3,52 @@
   "version": "0.1.0",
   "private": true,
   "description": "SGI Market Caja local-first POS",
+  "main": "electron/main.js",
   "scripts": {
     "start": "node app-local/server.js",
-    "check": "node --check app-local/server.js && node --check app-local/public/app.js"
+    "desktop": "electron .",
+    "dist": "electron-builder --win nsis",
+    "check": "node --check app-local/server.js && node --check app-local/public/app.js && node --check electron/main.js"
+  },
+  "build": {
+    "appId": "com.sgi.market.caja",
+    "productName": "SGI Market Caja",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "app-local/**/*",
+      "electron/**/*",
+      "package.json",
+      "!app-local/data/**/*"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SGI Market Caja"
+    }
   },
   "engines": {
     "node": ">=24"
+  },
+  "devDependencies": {
+    "electron": "^42.0.1",
+    "electron-builder": "^24.13.3"
   }
 }
