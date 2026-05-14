@@ -110,6 +110,7 @@ function boot() {
   bindEvents();
   refreshAll();
   setInterval(refreshSummary, 15000);
+  renderIcons();
   els.scanInput.focus();
 }
 
@@ -227,12 +228,14 @@ async function loadSales() {
   els.salesList.innerHTML = data.sales.map((sale) => `
     <div class="sale-row">
       <div>
+        <span class="row-icon"><i data-lucide="receipt-text"></i></span>
         <strong>${money(sale.total)}</strong>
         <div class="meta">${formatDate(sale.created_at)} - ${paymentLabel(sale.payment_method)}</div>
       </div>
-      <span class="pill">${sale.status}</span>
+      <span class="pill"><i data-lucide="check"></i>${sale.status}</span>
     </div>
   `).join('') || '<div class="empty">Sin ventas registradas.</div>';
+  renderIcons();
 }
 
 async function refreshSummary() {
@@ -281,6 +284,7 @@ async function loadReports() {
       <strong>${money(sale.total)}</strong>
     </div>
   `).join('') || '<div class="empty">Sin ventas en este periodo.</div>';
+  renderIcons();
 
   renderReportCharts(data);
 }
@@ -348,7 +352,7 @@ function renderProducts() {
           <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - ${money(product.sale_price)}</div>
           <div class="meta ${low ? 'stock-low' : ''}">Stock ${product.stock} / minimo ${product.min_stock}</div>
         </div>
-        <button class="secondary" data-edit-product="${product.id}">Editar</button>
+        <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
       </div>
     `;
   }).join('');
@@ -356,6 +360,7 @@ function renderProducts() {
   els.productList.querySelectorAll('[data-edit-product]').forEach((button) => {
     button.addEventListener('click', () => openProductById(button.dataset.editProduct));
   });
+  renderIcons();
 }
 
 function renderProductManager() {
@@ -372,7 +377,7 @@ function renderProductManager() {
         <div><span class="label">Precio</span><strong>${money(product.sale_price)}</strong></div>
         <div><span class="label">Ganancia/u</span><strong>${money(profit)}</strong></div>
         <div><span class="label">Stock</span><strong class="${low ? 'stock-low' : ''}">${product.stock}</strong></div>
-        <button class="secondary" data-edit-product="${product.id}">Editar</button>
+        <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
       </div>
     `;
   }).join('') || '<div class="empty">No hay productos.</div>';
@@ -380,6 +385,7 @@ function renderProductManager() {
   els.productManagerList.querySelectorAll('[data-edit-product]').forEach((button) => {
     button.addEventListener('click', () => openProductById(button.dataset.editProduct));
   });
+  renderIcons();
 }
 
 function addToCart(product) {
@@ -409,7 +415,7 @@ function renderCart() {
       <strong>${money(product.sale_price * quantity)}</strong>
       <button class="danger" data-remove-cart="${product.id}" title="Quitar">x</button>
     </div>
-  `).join('') || '<div class="cart-item"><span class="empty">Carrito vacio.</span></div>';
+  `).join('') || '<div class="cart-empty"><span><i data-lucide="shopping-cart"></i></span><strong>Carrito vacio.</strong></div>';
 
   els.cartItems.querySelectorAll('[data-cart-qty]').forEach((input) => {
     input.addEventListener('change', () => {
@@ -434,6 +440,7 @@ function renderCart() {
 
   const total = items.reduce((sum, item) => sum + item.product.sale_price * item.quantity, 0);
   els.cartTotal.textContent = money(total);
+  renderIcons();
 }
 
 function openPaymentDialog() {
@@ -1107,4 +1114,10 @@ function showToast(message) {
   setTimeout(() => {
     els.toast.hidden = true;
   }, 3200);
+}
+
+function renderIcons() {
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
 }
