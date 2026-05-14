@@ -98,6 +98,18 @@ svg {
   transform: rotate(-45deg);
 }
 
+.brand-mark.image-mark {
+  overflow: hidden;
+  background: #fff;
+}
+
+.brand-mark.image-mark img {
+  width: 62px;
+  height: 62px;
+  object-fit: cover;
+  transform: rotate(-45deg);
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--primary-dark);
