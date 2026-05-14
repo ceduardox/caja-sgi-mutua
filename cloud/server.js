@@ -186,6 +186,13 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const saleDetailMatch = url.pathname.match(/^\/api\/sales\/([^/]+)$/);
+  if (saleDetailMatch && method === 'GET') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    sendJson(res, 200, { sale: await getSaleDetails(ctx, saleDetailMatch[1]) });
+    return;
+  }
+
   const salePaymentMatch = url.pathname.match(/^\/api\/sales\/([^/]+)\/payment$/);
   if (salePaymentMatch && method === 'PATCH') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
@@ -554,6 +561,31 @@ async function listSales(ctx, requestedStoreId) {
     LIMIT 100
   `, filter.values);
   return result.rows;
+}
+
+async function getSaleDetails(ctx, id) {
+  const saleResult = await pool.query(`
+    SELECT s.id, s.store_id, st.name AS store_name, t.business_name,
+      s.local_created_at AS created_at, s.total::float, s.payment_method,
+      s.cash_received::float, s.cash_change::float, s.qr_transaction_code,
+      s.status, s.void_reason, u.name AS cashier_name
+    FROM cloud_sales s
+    JOIN stores st ON st.id = s.store_id
+    JOIN tenants t ON t.id = st.tenant_id
+    LEFT JOIN cloud_users u ON u.id = s.cashier_user_id
+    WHERE s.id = $1
+  `, [id]);
+  const sale = saleResult.rows[0];
+  if (!sale) throw new HttpError(404, 'Venta no encontrada');
+  await resolveStoreId(ctx, sale.store_id);
+  const items = await pool.query(`
+    SELECT product_id, product_name, barcode, quantity::float, unit_price::float,
+      total::float AS line_total, total::float
+    FROM cloud_sale_items
+    WHERE sale_id = $1
+    ORDER BY product_name ASC
+  `, [id]);
+  return { ...sale, items: items.rows };
 }
 
 async function listProducts(ctx, query, requestedStoreId) {

@@ -943,20 +943,71 @@ label {
 }
 
 .receipt {
-  font-family: "Courier New", monospace;
+  width: 12cm;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0.45cm;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: #111827;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+}
+
+.receipt-head {
+  text-align: center;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #aeb7c4;
 }
 
 .receipt h2 {
-  margin-top: 0;
-  text-align: center;
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.receipt p {
+  margin: 3px 0;
+}
+
+.receipt-meta {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed #aeb7c4;
+}
+
+.receipt-items {
+  padding: 8px 0;
 }
 
 .receipt-line {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px dashed #c7c7c7;
-  padding: 5px 0;
+  padding: 6px 0;
+  border-bottom: 1px dashed #d7dde5;
+}
+
+.receipt-line span {
+  min-width: 0;
+}
+
+.receipt-line small {
+  display: block;
+  margin-top: 2px;
+  color: #66718a;
+}
+
+.receipt-line strong {
+  white-space: nowrap;
+}
+
+.receipt-thanks {
+  margin-top: 12px !important;
+  text-align: center;
+  font-weight: 800;
 }
 
 .toast {
@@ -1405,14 +1456,42 @@ select {
 }
 
 @media print {
+  @page {
+    size: 12cm 29.7cm;
+    margin: 0.35cm;
+  }
+
+  html,
+  body {
+    width: 12cm;
+    margin: 0;
+    padding: 0;
+    background: #fff !important;
+  }
+
   body > :not(dialog) {
     display: none;
   }
 
   dialog {
     display: block;
-    width: auto;
+    position: static;
+    width: 12cm;
+    max-width: 12cm;
+    margin: 0;
+    padding: 0;
+    border: 0;
     box-shadow: none;
+    background: #fff;
+  }
+
+  .receipt {
+    width: 12cm;
+    max-width: 12cm;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    font-size: 11px;
   }
 
   .dialog-actions {

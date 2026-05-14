@@ -605,13 +605,20 @@ async function handleSaleAction(event) {
   const voidButton = event.target.closest('[data-void-sale]');
   const paymentButton = event.target.closest('[data-edit-payment]');
   const cashButton = event.target.closest('[data-edit-cash]');
-  if (!voidButton && !paymentButton && !cashButton) return;
-  const saleId = (voidButton || paymentButton || cashButton).dataset.voidSale
-    || (voidButton || paymentButton || cashButton).dataset.editPayment
-    || (voidButton || paymentButton || cashButton).dataset.editCash;
+  const printButton = event.target.closest('[data-print-sale]');
+  if (!voidButton && !paymentButton && !cashButton && !printButton) return;
+  const actionButton = voidButton || paymentButton || cashButton || printButton;
+  const saleId = actionButton.dataset.voidSale
+    || actionButton.dataset.editPayment
+    || actionButton.dataset.editCash
+    || actionButton.dataset.printSale;
   const sale = findSale(saleId);
   if (!sale) return showToast('Venta no encontrada en pantalla');
   try {
+    if (printButton) {
+      await printSaleReceipt(sale);
+      return;
+    }
     if (voidButton) await voidSale(sale);
     if (paymentButton) await editSalePayment(sale);
     if (cashButton) await editCashReceived(sale);
@@ -674,14 +681,24 @@ function findSale(id) {
 }
 
 function renderSaleActions(sale) {
-  if (!canAdjustSales(state.user?.role) || sale.status === 'void') return '';
-  return `
-    <div class="sale-actions">
+  const adjustActions = canAdjustSales(state.user?.role) && sale.status !== 'void'
+    ? `
       <button class="ghost mini" data-edit-payment="${sale.id}" title="Corregir metodo de pago"><i data-lucide="credit-card"></i></button>
       <button class="ghost mini" data-edit-cash="${sale.id}" title="Corregir monto recibido"><i data-lucide="banknote"></i></button>
       <button class="danger mini" data-void-sale="${sale.id}" title="Anular venta"><i data-lucide="ban"></i></button>
+    `
+    : '';
+  return `
+    <div class="sale-actions">
+      <button class="ghost mini" data-print-sale="${sale.id}" title="Imprimir recibo"><i data-lucide="printer"></i></button>
+      ${adjustActions}
     </div>
   `;
+}
+
+async function printSaleReceipt(sale) {
+  const data = sale.items?.length ? { sale } : await api(`/api/sales/${sale.id}`);
+  showReceipt(data.sale);
 }
 
 async function handleSearch() {
@@ -1258,17 +1275,29 @@ function openImageViewer(src) {
 }
 
 function showReceipt(sale) {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const storeName = sale.store_name || state.activeStore?.name || '';
+  const businessName = sale.business_name || state.activeStore?.business_name || 'SGI Market Caja';
   els.receiptContent.innerHTML = `
-    <h2>SGI Market Caja</h2>
-    <p><strong>Venta:</strong> ${shortId(sale.id)}</p>
-    <p><strong>Fecha:</strong> ${formatDate(sale.created_at)}</p>
-    <p><strong>Pago:</strong> ${paymentLabel(sale.payment_method)}</p>
-    ${sale.items.map((item) => `
+    <div class="receipt-head">
+      <h2>${escapeHtml(businessName)}</h2>
+      ${storeName ? `<p>${escapeHtml(storeName)}</p>` : ''}
+      <p>Nota de venta</p>
+    </div>
+    <div class="receipt-meta">
+      <span>Venta</span><strong>${shortId(sale.id)}</strong>
+      <span>Fecha</span><strong>${formatDate(sale.created_at)}</strong>
+      <span>Cajero</span><strong>${escapeHtml(sale.cashier_name || state.user?.name || '')}</strong>
+      <span>Pago</span><strong>${paymentLabel(sale.payment_method)}</strong>
+    </div>
+    <div class="receipt-items">
+    ${items.map((item) => `
       <div class="receipt-line">
-        <span>${escapeHtml(item.product_name)} x ${item.quantity}</span>
-        <strong>${money(item.line_total)}</strong>
+        <span>${escapeHtml(item.product_name)}<small>${Number(item.quantity || 0)} x ${money(item.unit_price)}</small></span>
+        <strong>${money(item.line_total ?? item.total)}</strong>
       </div>
     `).join('')}
+    </div>
     <div class="receipt-line">
       <span>Total</span>
       <strong>${money(sale.total)}</strong>
@@ -1280,7 +1309,7 @@ function showReceipt(sale) {
     ${sale.payment_method === 'qr' && sale.qr_transaction_code ? `
       <p><strong>QR:</strong> ${escapeHtml(sale.qr_transaction_code)}</p>
     ` : ''}
-    <p>Gracias por su compra.</p>
+    <p class="receipt-thanks">Gracias por su compra.</p>
   `;
   els.receiptDialog.showModal();
 }
