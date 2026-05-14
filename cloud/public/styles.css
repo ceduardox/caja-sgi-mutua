@@ -141,6 +141,25 @@ button {
   background: #fbfdff;
 }
 
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.secondary {
+  background: #eef4f7;
+  color: var(--primary);
+  border: 1px solid #d8e5ea;
+}
+
+.mini {
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 12px;
+}
+
 #toast {
   position: fixed;
   right: 20px;

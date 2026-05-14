@@ -150,6 +150,14 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const userPasswordMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/password$/);
+  if (userPasswordMatch && method === 'PATCH') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    const user = await updateUserPassword(ctx, userPasswordMatch[1], await readJson(req));
+    sendJson(res, 200, { user });
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/sales') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
     sendJson(res, 200, { sales: await listSales(ctx) });
@@ -180,9 +188,9 @@ async function loginUser(username, password) {
     WHERE username = $1
   `, [cleanUsername]);
   const user = result.rows[0];
-  if (!user || !user.active || !verifyPassword(password, user.password_hash)) {
-    throw new HttpError(401, 'Usuario o contrasena incorrectos');
-  }
+  if (!user) throw new HttpError(404, 'Usuario no existe en cloud');
+  if (!user.active) throw new HttpError(403, 'Usuario inactivo en cloud');
+  if (!verifyPassword(password, user.password_hash)) throw new HttpError(401, 'Contrasena incorrecta en cloud');
   return publicUser(user);
 }
 
@@ -351,6 +359,29 @@ async function createUser(ctx, input) {
     VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING id, tenant_id, store_id, name, username, email, role, active, created_at
   `, [tenantId, storeId, name, username, email, hashPassword(password), role]);
+  return result.rows[0];
+}
+
+async function updateUserPassword(ctx, id, input) {
+  const password = cleanRequired(input.password, 'Contrasena');
+  if (password.length < 4) throw new HttpError(400, 'La contrasena debe tener al menos 4 caracteres');
+  const values = [hashPassword(password), id];
+  let where = 'WHERE id = $2';
+  if (ctx.user.role === 'tenant_owner') {
+    values.push(ctx.user.tenant_id);
+    where += ' AND tenant_id = $3';
+  }
+  if (ctx.user.role === 'branch_admin') {
+    values.push(ctx.user.store_id);
+    where += " AND store_id = $3 AND role IN ('editor', 'cashier')";
+  }
+  const result = await pool.query(`
+    UPDATE cloud_users
+    SET password_hash = $1, updated_at = now()
+    ${where}
+    RETURNING id, tenant_id, store_id, name, username, email, role, active, updated_at
+  `, values);
+  if (result.rowCount === 0) throw new HttpError(404, 'Usuario no encontrado o sin permiso');
   return result.rows[0];
 }
 

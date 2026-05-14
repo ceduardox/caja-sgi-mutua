@@ -49,6 +49,7 @@ function boot() {
   els.tenantForm.addEventListener('submit', saveTenant);
   els.storeForm.addEventListener('submit', saveStore);
   els.userForm.addEventListener('submit', saveUser);
+  els.usersList.addEventListener('click', handleUserListClick);
   els.userTenant.addEventListener('change', renderStoreOptions);
   els.userRole.addEventListener('change', updateUserStoreVisibility);
   initializeSession();
@@ -161,7 +162,13 @@ function renderLists() {
   `).join('') || '<div class="meta">Sin sucursales.</div>';
 
   els.usersList.innerHTML = state.users.map((user) => `
-    <div class="row"><strong>${escapeHtml(user.name)}</strong><div class="meta">${escapeHtml(user.username)} - ${roleLabel(user.role)} - ${escapeHtml(user.store_name || user.business_name || 'Global')}</div></div>
+    <div class="row action-row">
+      <div>
+        <strong>${escapeHtml(user.name)}</strong>
+        <div class="meta">${escapeHtml(user.username)} - ${roleLabel(user.role)} - ${escapeHtml(user.store_name || user.business_name || 'Global')}</div>
+      </div>
+      <button class="secondary mini" data-reset-password="${user.id}" data-username="${escapeHtml(user.username)}">Clave</button>
+    </div>
   `).join('') || '<div class="meta">Sin usuarios.</div>';
 
   els.salesList.innerHTML = state.sales.map((sale) => `
@@ -225,6 +232,23 @@ async function saveUser(event) {
     els.userForm.reset();
     await refreshAll();
     showToast('Usuario creado');
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function handleUserListClick(event) {
+  const button = event.target.closest('[data-reset-password]');
+  if (!button) return;
+  const password = window.prompt(`Nueva contrasena para ${button.dataset.username}:`);
+  if (password === null) return;
+  if (password.trim().length < 4) return showToast('La contrasena debe tener al menos 4 caracteres');
+  try {
+    await api(`/api/users/${button.dataset.resetPassword}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify({ password: password.trim() })
+    });
+    showToast('Contrasena actualizada');
   } catch (error) {
     showToast(error.message);
   }
