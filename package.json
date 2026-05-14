@@ -6,9 +6,10 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "node app-local/server.js",
+    "cloud": "node cloud/server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis",
-    "check": "node --check app-local/server.js && node --check app-local/public/app.js && node --check electron/main.js"
+    "check": "node --check app-local/server.js && node --check app-local/public/app.js && node --check electron/main.js && node --check cloud/server.js && node --check cloud/public/app.js"
   },
   "build": {
     "appId": "com.sgi.market.caja",
@@ -51,5 +52,8 @@
   "devDependencies": {
     "electron": "^42.0.1",
     "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "pg": "^8.20.0"
   }
 }

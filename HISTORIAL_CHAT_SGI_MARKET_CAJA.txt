@@ -1,0 +1,146 @@
+HISTORIAL DEL CHAT - SGI MARKET CAJA
+Fecha: 2026-05-14
+Proyecto local: G:\SGI EC\SISTEMA VENTAS PRO
+Repositorio GitHub: https://github.com/ceduardox/caja-sgi-mutua.git
+Dominio previsto cloud: caja.sgimarket.com
+
+1. Idea inicial
+- Crear un sistema de ventas para tienda que funcione aunque no haya WiFi.
+- No usar Excel como base principal.
+- La caja debe instalarse en PC Windows y seguir vendiendo offline.
+- La nube se usara para sincronizacion, reportes, panel central, licencias y suscripciones.
+- Railway no debe procesar cada venta en tiempo real; debe recibir datos sincronizados.
+
+2. Arquitectura decidida
+- Sistema local-first.
+- App local instalada en cada PC de sucursal.
+- Base local SQLite.
+- Backend cloud en Railway con PostgreSQL.
+- Panel web para admin maestro, dueno/admin general y admin de sucursal.
+- La venta diaria nunca debe depender de internet.
+
+3. Nombre del sistema
+- Nombre corto: SGI Market Caja.
+- Nombre original completo: SGI Market Mutualista Caja.
+- Se decidio quitar "Mutualista" como marca del sistema, porque Mutualista sera solo una sucursal.
+
+4. App local creada
+- Backend local Node.js con SQLite.
+- Interfaz POS web.
+- Productos con CRUD.
+- Imagenes de producto con compresion.
+- Lector de codigo de barras tipo teclado USB.
+- Camara para tomar foto desde PC/movil compatible.
+- Venta con carrito.
+- Metodo de pago efectivo y QR.
+- En efectivo se calcula monto recibido y cambio.
+- En QR se permite codigo de transaccion opcional.
+- Reportes con graficos.
+- Auditoria inicial.
+
+5. Roles locales
+- owner: Admin general.
+- branch_admin: Admin de sucursal.
+- editor: Productos/reportes/caja.
+- cashier: Cajera, solo caja.
+- El admin general puede administrar sucursales y usuarios.
+- El admin de sucursal puede crear editoras y cajeras de su sucursal.
+
+6. Multi-sucursal
+- Se agrego selector de "Sucursal activa" para el admin general.
+- Al cambiar sucursal activa, caja, productos, ventas y reportes trabajan sobre esa sucursal.
+- Se limpia el carrito al cambiar sucursal para evitar ventas cruzadas.
+
+7. Ventas y auditoria
+- Se agregaron acciones en ventas recientes y reportes:
+  - Anular venta.
+  - Corregir metodo de pago.
+  - Corregir monto recibido.
+- Anular venta no borra la venta: cambia estado a anulada, guarda motivo y devuelve stock.
+- Correcciones guardan antes/despues.
+- Se creo tabla sale_audit_logs.
+- Se repararon llaves foraneas antiguas en SQLite que apuntaban a users_old_role.
+
+8. Instalador Windows
+- Se eligio Electron por practicidad, porque la app actual es Node + SQLite + web.
+- Se agrego electron/main.js.
+- Se agregaron scripts:
+  - npm.cmd run desktop
+  - npm.cmd run dist
+- Se genero instalador:
+  dist\SGI Market Caja Setup 0.1.0.exe
+- El instalador no se sube al repo porque dist/ esta en .gitignore.
+- La app instalada guarda datos en:
+  %APPDATA%\SGI Market Caja\data\sgi-market-caja.sqlite
+- En desarrollo guarda datos en:
+  app-local\data\sgi-market-caja.sqlite
+- Esto permite actualizar instalando encima sin borrar productos, ventas ni auditoria.
+
+9. Iconos y branding
+- Se agregaron imagenes en images/.
+- Se uso favicon.png como favicon web.
+- Se genero build/icon.ico para el instalador Windows.
+- Se agregaron assets publicos:
+  app-local/public/assets/favicon.png
+  app-local/public/assets/logo-horizontal.png
+- El instalador se regenero con icono.
+
+10. Problemas resueltos
+- Error de login en localhost:4173: habia un servidor viejo ocupando el puerto.
+- Se cerro el proceso viejo y se inicio el servidor actual.
+- Login verificado:
+  usuario: admin
+  contrasena: admin123
+- Se explico que localhost en cada PC es distinto.
+- Una cajera creada en la PC admin local no aparece en otra PC porque todavia no hay sincronizacion cloud.
+
+11. Railway y nube
+- Se decidio crear proyecto en Railway para el panel central.
+- Debe crearse PostgreSQL en Railway.
+- Dominio previsto: caja.sgimarket.com.
+- Railway requiere configurar custom domain con DNS, normalmente CNAME y TXT.
+- El backend cloud usara DATABASE_URL de Railway.
+- El panel cloud debe permitir:
+  - Admin maestro.
+  - Clientes/tiendas.
+  - Sucursales.
+  - Usuarios.
+  - Dispositivos instalados.
+  - Ventas sincronizadas.
+  - Reportes.
+  - Licencias/suscripciones mas adelante.
+
+12. Sincronizacion pendiente
+- Falta crear backend cloud real en cloud/.
+- Falta endpoint /api/sync/push.
+- Falta worker local que suba sync_queue cada 15-30 segundos.
+- Falta descarga inicial de usuarios/productos/sucursal desde la nube.
+- La PC local debe seguir vendiendo offline aunque Railway no responda.
+
+13. Proximo paso recomendado
+- Crear backend cloud minimo en cloud/:
+  - Express + PostgreSQL.
+  - Login admin maestro.
+  - Panel web basico.
+  - Tablas tenants, stores, users, devices, sync_events, cloud_sales.
+  - Endpoint /api/sync/push.
+- Luego conectar el instalador local con esa nube para que usuarios y productos se compartan entre PCs.
+
+14. Backend cloud inicial creado
+- Se decidio usar PORT automatico de Railway, no CLOUD_PORT.
+- Se creo railway.json para arrancar con:
+  npm run cloud
+- Se agrego dependencia pg para PostgreSQL.
+- Se creo cloud/server.js con:
+  - /api/health
+  - /api/login
+  - /api/session
+  - /api/dashboard
+  - /api/tenants
+  - /api/stores
+  - /api/users
+  - /api/sales
+  - /api/sync/push
+- Se creo panel web basico en cloud/public.
+- Se actualizo cloud/postgres_schema.sql con tenants, stores, cloud_users,
+  devices, cloud_sales y sync_events.

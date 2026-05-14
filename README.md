@@ -45,6 +45,18 @@ dist\SGI Market Caja Setup 0.1.0.exe
 En la app instalada, la base local se guarda en AppData para permitir actualizar
 instalando encima sin perder productos, ventas ni auditoria.
 
+## Backend Cloud Railway
+
+Railway debe ejecutar el servicio cloud con:
+
+```bash
+npm run cloud
+```
+
+El archivo `railway.json` ya deja configurado ese comando y el healthcheck en
+`/api/health`. El backend cloud usa PostgreSQL por `DATABASE_URL` y crea el
+admin maestro desde las variables `MASTER_ADMIN_*`.
+
 ## Regla principal
 
 La tienda opera localmente. Railway no debe ser necesario para registrar ventas.

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SGI Market Cloud</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p>Panel central</p>
+        <h1>SGI Market Cloud</h1>
+      </div>
+      <button id="logoutButton" hidden>Cerrar sesion</button>
+    </header>
+
+    <main>
+      <section id="loginView" class="card login-card">
+        <h2>Ingresar</h2>
+        <form id="loginForm">
+          <label>Usuario<input id="username" autocomplete="username" required></label>
+          <label>Contrasena<input id="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Ingresar</button>
+        </form>
+      </section>
+
+      <section id="dashboardView" hidden>
+        <div class="grid stats">
+          <article><span>Clientes</span><strong id="tenantCount">0</strong></article>
+          <article><span>Sucursales</span><strong id="storeCount">0</strong></article>
+          <article><span>Usuarios</span><strong id="userCount">0</strong></article>
+          <article><span>Vendido hoy</span><strong id="todayTotal">Bs 0.00</strong></article>
+        </div>
+
+        <div class="grid panels">
+          <section class="card master-only">
+            <h2>Crear cliente</h2>
+            <form id="tenantForm">
+              <label>Negocio<input id="tenantBusinessName" required placeholder="Ej. Tienda Central"></label>
+              <label>Dueno<input id="tenantOwnerName" placeholder="Nombre"></label>
+              <label>Email<input id="tenantOwnerEmail" type="email" placeholder="correo@dominio.com"></label>
+              <button type="submit">Crear cliente</button>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Crear sucursal</h2>
+            <form id="storeForm">
+              <label class="master-only">Cliente<select id="storeTenant"></select></label>
+              <label>Sucursal<input id="storeName" required placeholder="Ej. Mutualista"></label>
+              <label>Direccion<input id="storeAddress" placeholder="Opcional"></label>
+              <button type="submit">Crear sucursal</button>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Crear usuario</h2>
+            <form id="userForm">
+              <label>Nombre<input id="userName" required></label>
+              <label>Usuario<input id="userUsername" required></label>
+              <label>Email<input id="userEmail" type="email"></label>
+              <label>Contrasena<input id="userPassword" type="password" required></label>
+              <label class="master-only">Cliente<select id="userTenant"></select></label>
+              <label>Sucursal<select id="userStore"></select></label>
+              <label>Rol<select id="userRole"></select></label>
+              <button type="submit">Crear usuario</button>
+            </form>
+          </section>
+        </div>
+
+        <div class="grid lists">
+          <section class="card master-only">
+            <h2>Clientes</h2>
+            <div id="tenantsList" class="list"></div>
+          </section>
+          <section class="card">
+            <h2>Sucursales</h2>
+            <div id="storesList" class="list"></div>
+          </section>
+          <section class="card">
+            <h2>Usuarios</h2>
+            <div id="usersList" class="list"></div>
+          </section>
+          <section class="card">
+            <h2>Ventas sincronizadas</h2>
+            <div id="salesList" class="list"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
