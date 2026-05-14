@@ -53,19 +53,67 @@ CREATE TABLE IF NOT EXISTS devices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS cloud_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (store_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS cloud_products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES cloud_categories(id) ON DELETE SET NULL,
+  barcode TEXT,
+  sku TEXT,
+  name TEXT NOT NULL,
+  cost_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  sale_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  stock NUMERIC(12,2) NOT NULL DEFAULT 0,
+  min_stock NUMERIC(12,2) NOT NULL DEFAULT 0,
+  unit TEXT NOT NULL DEFAULT 'unidad',
+  image_data TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (store_id, barcode),
+  UNIQUE (store_id, sku)
+);
+
 CREATE TABLE IF NOT EXISTS cloud_sales (
   id UUID PRIMARY KEY,
   store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
   device_id TEXT,
+  cashier_user_id UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
   local_created_at TIMESTAMPTZ NOT NULL,
   subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
   discount_total NUMERIC(12,2) NOT NULL DEFAULT 0,
   total NUMERIC(12,2) NOT NULL DEFAULT 0,
   payment_method TEXT NOT NULL DEFAULT 'cash',
+  cash_received NUMERIC(12,2),
+  cash_change NUMERIC(12,2),
+  qr_transaction_code TEXT,
   status TEXT NOT NULL DEFAULT 'completed',
   payload_json JSONB NOT NULL,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (store_id, id)
+);
+
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cashier_user_id UUID REFERENCES cloud_users(id) ON DELETE SET NULL;
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_received NUMERIC(12,2);
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_change NUMERIC(12,2);
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS qr_transaction_code TEXT;
+
+CREATE TABLE IF NOT EXISTS cloud_sale_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id UUID NOT NULL REFERENCES cloud_sales(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES cloud_products(id) ON DELETE SET NULL,
+  product_name TEXT NOT NULL,
+  barcode TEXT,
+  quantity NUMERIC(12,2) NOT NULL,
+  unit_price NUMERIC(12,2) NOT NULL,
+  total NUMERIC(12,2) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sync_events (
@@ -86,5 +134,7 @@ CREATE TABLE IF NOT EXISTS sync_events (
 
 CREATE INDEX IF NOT EXISTS idx_cloud_users_role ON cloud_users(role);
 CREATE INDEX IF NOT EXISTS idx_stores_tenant ON stores(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cloud_products_store_name ON cloud_products(store_id, name);
+CREATE INDEX IF NOT EXISTS idx_cloud_products_store_barcode ON cloud_products(store_id, barcode);
 CREATE INDEX IF NOT EXISTS idx_cloud_sales_store_date ON cloud_sales(store_id, local_created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_events_status ON sync_events(status, created_at);

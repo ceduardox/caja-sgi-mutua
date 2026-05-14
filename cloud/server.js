@@ -1,7 +1,7 @@
 const { createServer } = require('node:http');
 const { readFileSync, existsSync } = require('node:fs');
 const { join, extname } = require('node:path');
-const { randomBytes, scryptSync, timingSafeEqual } = require('node:crypto');
+const { randomUUID, randomBytes, scryptSync, timingSafeEqual } = require('node:crypto');
 const { Pool } = require('pg');
 
 loadEnv();
@@ -28,7 +28,10 @@ const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon'
 };
 
@@ -106,7 +109,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && url.pathname === '/api/dashboard') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
     sendJson(res, 200, await getDashboard(ctx));
     return;
   }
@@ -125,7 +128,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && url.pathname === '/api/stores') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
     sendJson(res, 200, { stores: await listStores(ctx) });
     return;
   }
@@ -159,8 +162,36 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && url.pathname === '/api/sales') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
     sendJson(res, 200, { sales: await listSales(ctx) });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/products') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    sendJson(res, 200, { products: await listProducts(ctx, url.searchParams.get('q'), url.searchParams.get('store_id')) });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/products') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor']);
+    const product = await createProduct(ctx, await readJson(req));
+    sendJson(res, 201, { product });
+    return;
+  }
+
+  const productMatch = url.pathname.match(/^\/api\/products\/([^/]+)$/);
+  if (productMatch && method === 'PUT') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor']);
+    const product = await updateProduct(ctx, productMatch[1], await readJson(req));
+    sendJson(res, 200, { product });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/sales') {
+    requireRole(ctx, ['tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    const sale = await createOnlineSale(ctx, await readJson(req));
+    sendJson(res, 201, { sale });
     return;
   }
 
@@ -389,16 +420,131 @@ async function listSales(ctx) {
   const filter = saleScopeFilter(ctx, 's');
   const result = await pool.query(`
     SELECT s.id, s.store_id, st.name AS store_name, t.business_name, s.total,
-      s.payment_method, s.status, s.local_created_at, s.received_at
+      s.payment_method, s.cash_received, s.cash_change, s.qr_transaction_code,
+      s.status, s.local_created_at, s.received_at, u.name AS cashier_name
     FROM cloud_sales s
     JOIN stores st ON st.id = s.store_id
     JOIN tenants t ON t.id = st.tenant_id
+    LEFT JOIN cloud_users u ON u.id = s.cashier_user_id
     ${filter.join}
     ${filter.where}
     ORDER BY s.local_created_at DESC
     LIMIT 100
   `, filter.values);
   return result.rows;
+}
+
+async function listProducts(ctx, query, requestedStoreId) {
+  const values = [];
+  let where = 'WHERE p.active = TRUE';
+  if (!(ctx.user.role === 'master_admin' && !cleanOptional(requestedStoreId))) {
+    const storeId = await resolveStoreId(ctx, requestedStoreId);
+    values.push(storeId);
+    where += ` AND p.store_id = $${values.length}`;
+  }
+  const q = cleanOptional(query);
+  if (q) {
+    values.push(`%${q.toLowerCase()}%`);
+    where += ` AND (
+      lower(p.name) LIKE $${values.length} OR lower(COALESCE(p.barcode, '')) LIKE $${values.length} OR lower(COALESCE(p.sku, '')) LIKE $${values.length}
+    )`;
+  }
+  const result = await pool.query(`
+    SELECT p.id, p.store_id, p.category_id, c.name AS category_name, p.barcode, p.sku,
+      p.name, p.cost_price::float, p.sale_price::float, p.stock::float,
+      p.min_stock::float, p.unit, p.image_data, p.active, p.updated_at
+    FROM cloud_products p
+    LEFT JOIN cloud_categories c ON c.id = p.category_id
+    ${where}
+    ORDER BY p.name ASC
+    LIMIT 500
+  `, values);
+  return result.rows;
+}
+
+async function createProduct(ctx, input) {
+  const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
+  const product = normalizeProductInput(input);
+  const result = await pool.query(`
+    INSERT INTO cloud_products (
+      store_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, image_data
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
+      stock::float, min_stock::float, unit, image_data, active, updated_at
+  `, [storeId, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.image_data]);
+  return result.rows[0];
+}
+
+async function updateProduct(ctx, id, input) {
+  const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
+  const product = normalizeProductInput(input);
+  const result = await pool.query(`
+    UPDATE cloud_products
+    SET barcode = $1, sku = $2, name = $3, cost_price = $4, sale_price = $5,
+      stock = $6, min_stock = $7, unit = $8, image_data = $9, updated_at = now()
+    WHERE id = $10 AND store_id = $11
+    RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
+      stock::float, min_stock::float, unit, image_data, active, updated_at
+  `, [product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.image_data, id, storeId]);
+  if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
+  return result.rows[0];
+}
+
+async function createOnlineSale(ctx, input) {
+  const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (items.length === 0) throw new HttpError(400, 'Agrega productos a la venta');
+  const paymentMethod = normalizePaymentMethod(input.payment_method || input.paymentMethod);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const normalizedItems = [];
+    let subtotal = 0;
+    for (const rawItem of items) {
+      const productId = cleanRequired(rawItem.product_id || rawItem.productId || rawItem.id, 'Producto');
+      const quantity = normalizePositiveNumber(rawItem.quantity || rawItem.qty || 1, 'Cantidad');
+      const productResult = await client.query(`
+        SELECT id, name, barcode, sale_price::float, stock::float
+        FROM cloud_products
+        WHERE id = $1 AND store_id = $2 AND active = TRUE
+        FOR UPDATE
+      `, [productId, storeId]);
+      const product = productResult.rows[0];
+      if (!product) throw new HttpError(404, 'Producto no encontrado');
+      if (Number(product.stock || 0) < quantity) throw new HttpError(400, `Stock insuficiente: ${product.name}`);
+      const unitPrice = Number(product.sale_price || 0);
+      const total = roundMoney(unitPrice * quantity);
+      subtotal = roundMoney(subtotal + total);
+      normalizedItems.push({ product, quantity, unitPrice, total });
+      await client.query('UPDATE cloud_products SET stock = stock - $1, updated_at = now() WHERE id = $2', [quantity, product.id]);
+    }
+    const discount = roundMoney(input.discount_total || input.discountTotal || 0);
+    const total = roundMoney(subtotal - discount);
+    const payment = normalizePaymentDetails(paymentMethod, total, input.cash_received || input.cashReceived, input.qr_transaction_code || input.qrTransactionCode);
+    const saleId = randomUUID();
+    const payload = { online: true, items: normalizedItems.map((item) => ({ product_id: item.product.id, quantity: item.quantity, unit_price: item.unitPrice, total: item.total })) };
+    const saleResult = await client.query(`
+      INSERT INTO cloud_sales (
+        id, store_id, cashier_user_id, local_created_at, subtotal, discount_total, total,
+        payment_method, cash_received, cash_change, qr_transaction_code, status, payload_json
+      ) VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,$9,$10,'completed',$11)
+      RETURNING id, store_id, local_created_at, subtotal::float, discount_total::float,
+        total::float, payment_method, cash_received::float, cash_change::float, qr_transaction_code, status
+    `, [saleId, storeId, ctx.user.id, subtotal, discount, total, paymentMethod, payment.cash_received, payment.cash_change, payment.qr_transaction_code, payload]);
+    for (const item of normalizedItems) {
+      await client.query(`
+        INSERT INTO cloud_sale_items (sale_id, product_id, product_name, barcode, quantity, unit_price, total)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `, [saleId, item.product.id, item.product.name, item.product.barcode, item.quantity, item.unitPrice, item.total]);
+    }
+    await client.query('COMMIT');
+    return saleResult.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function handleSyncPush(body, res) {
@@ -576,6 +722,85 @@ function verifyPassword(password, stored) {
   const actual = scryptSync(String(password || ''), salt, 32);
   const expected = Buffer.from(hash, 'hex');
   return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+async function resolveStoreId(ctx, requestedStoreId) {
+  const requested = cleanOptional(requestedStoreId);
+  if (ctx.user.role === 'master_admin') {
+    if (!requested) throw new HttpError(400, 'Sucursal requerida');
+    return requested;
+  }
+  if (ctx.user.role === 'tenant_owner') {
+    if (requested) {
+      const result = await pool.query('SELECT id FROM stores WHERE id = $1 AND tenant_id = $2 AND active = TRUE', [requested, ctx.user.tenant_id]);
+      if (result.rowCount === 0) throw new HttpError(403, 'Sucursal fuera de tu negocio');
+      return requested;
+    }
+    const firstStore = await pool.query('SELECT id FROM stores WHERE tenant_id = $1 AND active = TRUE ORDER BY created_at ASC LIMIT 1', [ctx.user.tenant_id]);
+    if (firstStore.rowCount === 0) throw new HttpError(400, 'No tienes sucursales activas');
+    return firstStore.rows[0].id;
+  }
+  if (!ctx.user.store_id) throw new HttpError(400, 'Usuario sin sucursal asignada');
+  if (requested && requested !== ctx.user.store_id) throw new HttpError(403, 'No tienes permiso para esa sucursal');
+  return ctx.user.store_id;
+}
+
+function normalizeProductInput(input) {
+  const image = cleanOptional(input.image_data || input.imageData);
+  if (image && !image.startsWith('data:image/')) throw new HttpError(400, 'La imagen debe ser JPG, PNG o WEBP');
+  return {
+    barcode: cleanOptional(input.barcode),
+    sku: cleanOptional(input.sku),
+    name: cleanRequired(input.name, 'Nombre'),
+    cost_price: normalizeMoney(input.cost_price || input.costPrice || 0),
+    sale_price: normalizeMoney(input.sale_price || input.salePrice || 0),
+    stock: normalizeNumber(input.stock || 0),
+    min_stock: normalizeNumber(input.min_stock || input.minStock || 0),
+    unit: cleanOptional(input.unit) || 'unidad',
+    image_data: image
+  };
+}
+
+function normalizePaymentMethod(value) {
+  const method = String(value || 'cash').trim();
+  if (!['cash', 'qr'].includes(method)) throw new HttpError(400, 'Metodo de pago invalido');
+  return method;
+}
+
+function normalizePaymentDetails(method, total, cashReceived, qrTransactionCode) {
+  if (method === 'cash') {
+    const received = normalizeMoney(cashReceived);
+    if (received < total) throw new HttpError(400, 'El efectivo recibido no cubre el total');
+    return {
+      cash_received: received,
+      cash_change: roundMoney(received - total),
+      qr_transaction_code: null
+    };
+  }
+  return {
+    cash_received: null,
+    cash_change: null,
+    qr_transaction_code: cleanOptional(qrTransactionCode)
+  };
+}
+
+function normalizePositiveNumber(value, label) {
+  const number = normalizeNumber(value);
+  if (!Number.isFinite(number) || number <= 0) throw new HttpError(400, `${label} invalida`);
+  return number;
+}
+
+function normalizeNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function normalizeMoney(value) {
+  return roundMoney(normalizeNumber(value));
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function randomToken() {

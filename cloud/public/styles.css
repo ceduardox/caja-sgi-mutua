@@ -55,7 +55,7 @@ main {
 }
 
 .panels {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(320px, 1fr));
   align-items: start;
 }
 
@@ -73,6 +73,18 @@ main {
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07);
 }
 
+.toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.toolbar label {
+  min-width: min(520px, 100%);
+}
+
 .login-card {
   max-width: 430px;
   margin: 9vh auto;
@@ -84,6 +96,12 @@ h2 {
 
 form {
   display: grid;
+  gap: 12px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -134,11 +152,32 @@ button {
   overflow: auto;
 }
 
+.compact {
+  max-height: 220px;
+}
+
 .row {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fbfdff;
+}
+
+button.row {
+  width: 100%;
+  min-height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  color: var(--ink);
+  background: #fbfdff;
+  font-weight: 700;
+}
+
+button.row small {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .action-row {
@@ -152,6 +191,26 @@ button {
   background: #eef4f7;
   color: var(--primary);
   border: 1px solid #d8e5ea;
+}
+
+.sale-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+  font-weight: 800;
+}
+
+.sale-total strong {
+  font-size: 22px;
+}
+
+.qty-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .mini {
@@ -176,6 +235,16 @@ button {
   .stats,
   .panels,
   .lists {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar,
+  .action-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .split {
     grid-template-columns: 1fr;
   }
 }
