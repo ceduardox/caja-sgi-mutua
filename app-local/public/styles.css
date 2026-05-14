@@ -1129,6 +1129,23 @@ select {
   text-align: center;
 }
 
+.login-message {
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid #d8e5ea;
+  background: #eef8f6;
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.login-message[data-type="error"] {
+  border-color: #f4b8b2;
+  background: #fff1f0;
+  color: var(--accent);
+}
+
 .table-row {
   display: grid;
   grid-template-columns: 1.4fr 0.8fr 1fr 0.8fr;

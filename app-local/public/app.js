@@ -31,6 +31,7 @@ const els = {
   loginForm: document.querySelector('#loginForm'),
   loginUsername: document.querySelector('#loginUsername'),
   loginPassword: document.querySelector('#loginPassword'),
+  loginMessage: document.querySelector('#loginMessage'),
   storeForm: document.querySelector('#storeForm'),
   storeName: document.querySelector('#storeName'),
   storesList: document.querySelector('#storesList'),
@@ -231,6 +232,9 @@ async function initializeSession() {
 
 async function login(event) {
   event.preventDefault();
+  setLoginMessage('Validando acceso...', 'info');
+  const submitButton = els.loginForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
   try {
     const data = await api('/api/login', {
       method: 'POST',
@@ -240,11 +244,15 @@ async function login(event) {
       })
     });
     applySession(data.user, data.store);
+    setLoginMessage('', 'info');
     els.loginOverlay.classList.remove('active');
     await refreshAll();
     els.scanInput.focus();
   } catch (error) {
+    setLoginMessage(error.message, 'error');
     showToast(error.message);
+  } finally {
+    submitButton.disabled = false;
   }
 }
 
@@ -1453,6 +1461,13 @@ function showToast(message) {
   setTimeout(() => {
     els.toast.hidden = true;
   }, 3200);
+}
+
+function setLoginMessage(message, type) {
+  if (!els.loginMessage) return;
+  els.loginMessage.textContent = message;
+  els.loginMessage.dataset.type = type || 'info';
+  els.loginMessage.hidden = !message;
 }
 
 function renderIcons() {

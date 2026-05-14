@@ -1119,12 +1119,20 @@ async function loginUserWithCloudFallback(username, password) {
 }
 
 async function importCloudLogin(username, password) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
   const response = await fetch(`${CLOUD_PUBLIC_URL}/api/bootstrap/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  const data = await response.json().catch(() => ({}));
+    body: JSON.stringify({ username, password }),
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
+  }
   if (!response.ok) {
     const error = new Error(data.error || `Cloud rechazo el login (${response.status})`);
     error.status = response.status;
@@ -1148,6 +1156,9 @@ async function importCloudLogin(username, password) {
 }
 
 function buildLoginErrorMessage(localError, cloudError) {
+  if (cloudError.name === 'AbortError') {
+    return `${localError.message}. El cloud no respondio en 12 segundos. Revisa internet o Railway.`;
+  }
   if (cloudError.name === 'TypeError' || /fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|No es posible conectar/i.test(cloudError.message || '')) {
     return `${localError.message}. No se pudo conectar al cloud ${CLOUD_PUBLIC_URL}. Revisa internet, dominio o Railway.`;
   }
