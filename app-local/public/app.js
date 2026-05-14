@@ -136,6 +136,7 @@ function bindEvents() {
   els.storeForm.addEventListener('submit', saveStore);
   els.storesList.addEventListener('click', handleStoreListClick);
   els.userForm.addEventListener('submit', saveUser);
+  els.userRole.addEventListener('change', updateUserFormPermissions);
   els.scanInput.addEventListener('input', debounce(handleSearch, 140));
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -243,28 +244,32 @@ async function login(event) {
 
 function applySession(user) {
   state.user = user;
-  els.currentUserLabel.textContent = `${user.name} - ${user.store_name}`;
+  els.currentUserLabel.textContent = user.role === 'owner'
+    ? `${user.name} - Administrador general`
+    : `${user.name} - ${user.store_name || 'Sin sucursal'}`;
   document.body.dataset.role = user.role;
   document.querySelectorAll('.tab').forEach((tab) => {
     const view = tab.dataset.view;
-    const allowed = user.role === 'admin' || (user.role === 'editor' && view !== 'adminView') || view === 'posView';
+    const allowed = canAccessView(user.role, view);
     tab.hidden = !allowed;
   });
-  if (user.role !== 'admin' && !document.querySelector('#posView')?.classList.contains('active')) {
+  if (!canAccessView(user.role, document.querySelector('.view.active')?.id || 'posView')) {
     showView('posView');
   }
   renderIcons();
 }
 
 async function loadAdminData() {
-  if (state.user?.role !== 'admin') return;
+  if (!canManageAdmin(state.user?.role)) return;
   const [storesData, usersData] = await Promise.all([api('/api/stores'), api('/api/users')]);
   renderStores(storesData.stores);
   renderUsers(usersData.users);
+  updateUserFormPermissions();
 }
 
 function renderStores(stores) {
   els.userStore.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
+  els.storeForm.hidden = state.user?.role !== 'owner';
   els.storesList.innerHTML = stores.map((store) => `
     <div class="data-row">
       <span class="row-icon"><i data-lucide="store"></i></span>
@@ -272,7 +277,7 @@ function renderStores(stores) {
         <strong>${escapeHtml(store.name)}</strong>
         <div class="meta">${store.license_status || 'trial'}</div>
       </div>
-      <button class="secondary" data-rename-store="${store.id}" data-store-name="${escapeHtml(store.name)}"><i data-lucide="pencil"></i>Renombrar</button>
+      ${state.user?.role === 'owner' ? `<button class="secondary" data-rename-store="${store.id}" data-store-name="${escapeHtml(store.name)}"><i data-lucide="pencil"></i>Renombrar</button>` : ''}
     </div>
   `).join('') || '<div class="empty">Sin sucursales.</div>';
   renderIcons();
@@ -304,15 +309,36 @@ async function handleStoreListClick(event) {
 function renderUsers(users) {
   els.usersList.innerHTML = users.map((user) => `
     <div class="data-row">
-      <span class="row-icon"><i data-lucide="${user.role === 'admin' ? 'shield-check' : 'badge'}"></i></span>
+      <span class="row-icon"><i data-lucide="${user.role === 'owner' || user.role === 'branch_admin' ? 'shield-check' : 'badge'}"></i></span>
       <div>
         <strong>${escapeHtml(user.name)}</strong>
-        <div class="meta">${escapeHtml(user.username)} - ${roleLabel(user.role)} - ${escapeHtml(user.store_name)}</div>
+        <div class="meta">${escapeHtml(user.username)} - ${roleLabel(user.role)} - ${escapeHtml(user.store_name || 'Todas las sucursales')}</div>
       </div>
       <span class="pill">${user.active ? 'Activo' : 'Inactivo'}</span>
     </div>
   `).join('') || '<div class="empty">Sin usuarios.</div>';
   renderIcons();
+}
+
+function updateUserFormPermissions() {
+  const isOwner = state.user?.role === 'owner';
+  const options = isOwner
+    ? [
+      ['cashier', 'Cajera'],
+      ['editor', 'Editor'],
+      ['branch_admin', 'Admin sucursal'],
+      ['owner', 'Admin general']
+    ]
+    : [
+      ['cashier', 'Cajera'],
+      ['editor', 'Editor']
+    ];
+  const currentRole = options.some(([value]) => value === els.userRole.value) ? els.userRole.value : options[0][0];
+  els.userRole.innerHTML = options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+  els.userRole.value = currentRole;
+  const ownerTarget = els.userRole.value === 'owner';
+  els.userStore.disabled = ownerTarget || !isOwner;
+  els.userStore.required = !ownerTarget;
 }
 
 async function saveStore(event) {
@@ -339,7 +365,7 @@ async function saveUser(event) {
         name: els.userName.value,
         username: els.userUsername.value,
         password: els.userPassword.value,
-        store_id: els.userStore.value,
+        store_id: els.userRole.value === 'owner' ? null : els.userStore.value,
         role: els.userRole.value
       })
     });
@@ -1241,8 +1267,24 @@ function paymentLabel(value) {
 }
 
 function roleLabel(value) {
-  const labels = { admin: 'Admin', editor: 'Editor', cashier: 'Cajera' };
+  const labels = {
+    owner: 'Admin general',
+    branch_admin: 'Admin sucursal',
+    admin: 'Admin',
+    editor: 'Editor',
+    cashier: 'Cajera'
+  };
   return labels[value] || value;
+}
+
+function canManageAdmin(role) {
+  return role === 'owner' || role === 'branch_admin';
+}
+
+function canAccessView(role, viewId) {
+  if (role === 'owner' || role === 'branch_admin') return true;
+  if (role === 'editor') return viewId !== 'adminView';
+  return viewId === 'posView';
 }
 
 function trimLabel(value) {

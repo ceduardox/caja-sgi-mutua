@@ -64,14 +64,17 @@ function seedLocalData() {
     VALUES (?, ?, ?)
   `).run(DEVICE_ID, DEFAULT_STORE_ID, 'Caja principal');
 
-  const existingAdmin = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get('admin');
+  const existingAdmin = db.prepare('SELECT id, password_hash, role, store_id FROM users WHERE username = ?').get('admin');
   if (!existingAdmin) {
     db.prepare(`
       INSERT INTO users (id, store_id, name, username, password_hash, role)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(DEFAULT_USER_ID, DEFAULT_STORE_ID, 'Administrador', 'admin', hashPassword('admin123'), 'admin');
+    `).run(DEFAULT_USER_ID, null, 'Administrador', 'admin', hashPassword('admin123'), 'owner');
   } else if (existingAdmin.password_hash === 'local-demo') {
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword('admin123'), existingAdmin.id);
+  }
+  if (existingAdmin && (existingAdmin.role === 'admin' || existingAdmin.store_id)) {
+    db.prepare('UPDATE users SET role = ?, store_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('owner', existingAdmin.id);
   }
 
   db.prepare(`
@@ -98,28 +101,46 @@ function migrateLocalDatabase() {
   if (!columns.includes('cash_received')) db.exec('ALTER TABLE sales ADD COLUMN cash_received REAL');
   if (!columns.includes('cash_change')) db.exec('ALTER TABLE sales ADD COLUMN cash_change REAL');
   if (!columns.includes('qr_transaction_code')) db.exec('ALTER TABLE sales ADD COLUMN qr_transaction_code TEXT');
+  migrateUsersTable();
+}
+
+function migrateUsersTable() {
   const usersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
-  if (usersSql && !usersSql.includes("'editor'")) {
+  const needsRoleMigration = usersSql && (!usersSql.includes("'owner'") || usersSql.includes('store_id TEXT NOT NULL'));
+  if (needsRoleMigration) {
     db.exec('PRAGMA foreign_keys = OFF');
     db.exec('ALTER TABLE users RENAME TO users_old_role');
     db.exec(`
       CREATE TABLE users (
         id TEXT PRIMARY KEY,
-        store_id TEXT NOT NULL,
+        store_id TEXT,
         name TEXT NOT NULL,
         username TEXT NOT NULL,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'editor', 'cashier')),
+        role TEXT NOT NULL CHECK (role IN ('owner', 'branch_admin', 'editor', 'cashier')),
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (store_id, username),
+        UNIQUE (username),
         FOREIGN KEY (store_id) REFERENCES stores(id)
       )
     `);
     db.exec(`
       INSERT INTO users (id, store_id, name, username, password_hash, role, active, created_at, updated_at)
-      SELECT id, store_id, name, username, password_hash, role, active, created_at, updated_at
+      SELECT
+        id,
+        CASE WHEN username = 'admin' OR id = '${DEFAULT_USER_ID}' OR role = 'admin' THEN NULL ELSE store_id END,
+        name,
+        username,
+        password_hash,
+        CASE
+          WHEN username = 'admin' OR id = '${DEFAULT_USER_ID}' OR role = 'admin' THEN 'owner'
+          WHEN role = 'editor' THEN 'editor'
+          ELSE 'cashier'
+        END,
+        active,
+        created_at,
+        updated_at
       FROM users_old_role
     `);
     db.exec('DROP TABLE users_old_role');
@@ -145,7 +166,7 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const user = loginUser(body.username, body.password);
     const token = randomUUID();
-    sessions.set(token, { userId: user.id, storeId: user.store_id, createdAt: Date.now() });
+    sessions.set(token, { userId: user.id, createdAt: Date.now() });
     res.setHeader('Set-Cookie', `sgi_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
     sendJson(res, 200, { user });
     return;
@@ -167,13 +188,13 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && url.pathname === '/api/stores') {
-    requireRole(ctx, ['admin', 'editor']);
-    sendJson(res, 200, { stores: listStores() });
+    requireRole(ctx, ['owner', 'branch_admin']);
+    sendJson(res, 200, { stores: listStores(ctx) });
     return;
   }
 
   if (method === 'POST' && url.pathname === '/api/stores') {
-    requireRole(ctx, ['admin']);
+    requireRole(ctx, ['owner']);
     const store = createStore(await readJson(req));
     sendJson(res, 201, { store });
     return;
@@ -181,21 +202,21 @@ async function handleApi(req, res, url) {
 
   const storeMatch = url.pathname.match(/^\/api\/stores\/([^/]+)$/);
   if (storeMatch && method === 'PUT') {
-    requireRole(ctx, ['admin']);
+    requireRole(ctx, ['owner']);
     const store = updateStore(storeMatch[1], await readJson(req));
     sendJson(res, 200, { store });
     return;
   }
 
   if (method === 'GET' && url.pathname === '/api/users') {
-    requireRole(ctx, ['admin']);
-    sendJson(res, 200, { users: listUsers() });
+    requireRole(ctx, ['owner', 'branch_admin']);
+    sendJson(res, 200, { users: listUsers(ctx) });
     return;
   }
 
   if (method === 'POST' && url.pathname === '/api/users') {
-    requireRole(ctx, ['admin']);
-    const user = createUser(await readJson(req));
+    requireRole(ctx, ['owner', 'branch_admin']);
+    const user = createUser(ctx, await readJson(req));
     sendJson(res, 201, { user });
     return;
   }
@@ -208,7 +229,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && url.pathname === '/api/products') {
-    requireRole(ctx, ['admin']);
+    requireRole(ctx, ['owner', 'branch_admin', 'editor']);
     const body = await readJson(req);
     const product = createProduct(ctx, body);
     enqueueSync(ctx, 'product', product.id, 'create', product);
@@ -218,7 +239,7 @@ async function handleApi(req, res, url) {
 
   const productMatch = url.pathname.match(/^\/api\/products\/([^/]+)$/);
   if (productMatch && method === 'PUT') {
-    requireRole(ctx, ['admin']);
+    requireRole(ctx, ['owner', 'branch_admin', 'editor']);
     const body = await readJson(req);
     const product = updateProduct(ctx, productMatch[1], body);
     enqueueSync(ctx, 'product', product.id, 'update', product);
@@ -646,7 +667,7 @@ function loginUser(username, password) {
   const user = db.prepare(`
     SELECT u.id, u.store_id, u.name, u.username, u.password_hash, u.role, u.active, s.name AS store_name
     FROM users u
-    JOIN stores s ON s.id = u.store_id
+    LEFT JOIN stores s ON s.id = u.store_id
     WHERE u.username = ?
   `).get(cleanUsername);
   if (!user || !user.active || !verifyPassword(password, user.password_hash)) {
@@ -666,7 +687,7 @@ function getRequestContext(req) {
   const user = db.prepare(`
     SELECT u.id, u.store_id, u.name, u.username, u.role, u.active, s.name AS store_name
     FROM users u
-    JOIN stores s ON s.id = u.store_id
+    LEFT JOIN stores s ON s.id = u.store_id
     WHERE u.id = ?
   `).get(session.userId);
   if (!user || !user.active) {
@@ -675,10 +696,13 @@ function getRequestContext(req) {
     error.status = 401;
     throw error;
   }
+  const workStoreId = user.store_id || DEFAULT_STORE_ID;
+  const workStore = db.prepare('SELECT id, name FROM stores WHERE id = ?').get(workStoreId);
   return {
     user: publicUser(user),
-    storeId: user.store_id,
-    store: { id: user.store_id, name: user.store_name }
+    storeId: workStoreId,
+    store: workStore || { id: workStoreId, name: 'Sucursal Principal' },
+    isOwner: user.role === 'owner'
   };
 }
 
@@ -690,7 +714,15 @@ function requireRole(ctx, roles) {
   }
 }
 
-function listStores() {
+function listStores(ctx) {
+  if (ctx.user.role === 'branch_admin') {
+    return db.prepare(`
+      SELECT id, name, license_status, grace_until, created_at, updated_at
+      FROM stores
+      WHERE id = ?
+      ORDER BY name ASC
+    `).all(ctx.storeId);
+  }
   return db.prepare(`
     SELECT id, name, license_status, grace_until, created_at, updated_at
     FROM stores
@@ -725,33 +757,52 @@ function updateStore(id, input) {
   return db.prepare('SELECT id, name, license_status, created_at, updated_at FROM stores WHERE id = ?').get(id);
 }
 
-function listUsers() {
-  return db.prepare(`
+function listUsers(ctx) {
+  const baseSql = `
     SELECT u.id, u.store_id, s.name AS store_name, u.name, u.username, u.role, u.active, u.created_at, u.updated_at
     FROM users u
-    JOIN stores s ON s.id = u.store_id
-    ORDER BY s.name ASC, u.name ASC
+    LEFT JOIN stores s ON s.id = u.store_id
+  `;
+  if (ctx.user.role === 'branch_admin') {
+    return db.prepare(`
+      ${baseSql}
+      WHERE u.store_id = ?
+      ORDER BY u.name ASC
+    `).all(ctx.storeId);
+  }
+  return db.prepare(`
+    ${baseSql}
+    ORDER BY COALESCE(s.name, 'Administrador general') ASC, u.name ASC
   `).all();
 }
 
-function createUser(input) {
+function createUser(ctx, input) {
   const name = String(input.name || '').trim();
   const username = String(input.username || '').trim();
   const password = String(input.password || '').trim();
   const role = String(input.role || 'cashier').trim();
-  const storeId = String(input.store_id || input.storeId || '').trim();
+  let storeId = String(input.store_id || input.storeId || '').trim();
   if (!name) throw new Error('El nombre es obligatorio');
   if (!username) throw new Error('El usuario es obligatorio');
   if (password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres');
-  if (!['admin', 'editor', 'cashier'].includes(role)) throw new Error('Rol invalido');
-  const store = db.prepare('SELECT id FROM stores WHERE id = ?').get(storeId);
-  if (!store) throw new Error('Sucursal no encontrada');
+  if (!['owner', 'branch_admin', 'editor', 'cashier'].includes(role)) throw new Error('Rol invalido');
+  if (ctx.user.role === 'branch_admin') {
+    if (!['editor', 'cashier'].includes(role)) throw new Error('El admin de sucursal solo puede crear editoras o cajeras');
+    storeId = ctx.storeId;
+  }
+  if (role === 'owner') {
+    if (ctx.user.role !== 'owner') throw new Error('Solo el administrador general puede crear otro administrador general');
+    storeId = null;
+  } else {
+    const store = db.prepare('SELECT id FROM stores WHERE id = ?').get(storeId);
+    if (!store) throw new Error('Sucursal no encontrada');
+  }
   const id = randomUUID();
   db.prepare(`
     INSERT INTO users (id, store_id, name, username, password_hash, role, active)
     VALUES (?, ?, ?, ?, ?, ?, 1)
   `).run(id, storeId, name, username, hashPassword(password), role);
-  return listUsers().find((user) => user.id === id);
+  return listUsers(ctx).find((user) => user.id === id);
 }
 
 function publicUser(user) {

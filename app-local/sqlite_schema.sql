@@ -23,15 +23,15 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  store_id TEXT NOT NULL,
+  store_id TEXT,
   name TEXT NOT NULL,
   username TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'editor', 'cashier')),
+  role TEXT NOT NULL CHECK (role IN ('owner', 'branch_admin', 'editor', 'cashier')),
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (store_id, username),
+  UNIQUE (username),
   FOREIGN KEY (store_id) REFERENCES stores(id)
 );
 
