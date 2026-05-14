@@ -25,6 +25,8 @@ const els = {
   connectionDot: document.querySelector('#connectionDot'),
   connectionText: document.querySelector('#connectionText'),
   currentUserLabel: document.querySelector('#currentUserLabel'),
+  activeStoreControl: document.querySelector('#activeStoreControl'),
+  activeStoreSelect: document.querySelector('#activeStoreSelect'),
   loginOverlay: document.querySelector('#loginOverlay'),
   loginForm: document.querySelector('#loginForm'),
   loginUsername: document.querySelector('#loginUsername'),
@@ -137,6 +139,7 @@ function bindEvents() {
   els.storesList.addEventListener('click', handleStoreListClick);
   els.userForm.addEventListener('submit', saveUser);
   els.userRole.addEventListener('change', updateUserFormPermissions);
+  els.activeStoreSelect.addEventListener('change', changeActiveStore);
   els.scanInput.addEventListener('input', debounce(handleSearch, 140));
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -208,13 +211,14 @@ function bindEvents() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadProducts(), refreshSummary(), loadSales(), checkHealth(), loadReports(), loadAdminData()]);
+  if (state.user?.role === 'owner') await loadAdminData();
+  await Promise.all([loadProducts(), refreshSummary(), loadSales(), checkHealth(), loadReports(), state.user?.role === 'owner' ? Promise.resolve() : loadAdminData()]);
 }
 
 async function initializeSession() {
   try {
     const data = await api('/api/session');
-    applySession(data.user);
+    applySession(data.user, data.store);
     await refreshAll();
     els.scanInput.focus();
   } catch {
@@ -233,7 +237,7 @@ async function login(event) {
         password: els.loginPassword.value
       })
     });
-    applySession(data.user);
+    applySession(data.user, data.store);
     els.loginOverlay.classList.remove('active');
     await refreshAll();
     els.scanInput.focus();
@@ -242,11 +246,16 @@ async function login(event) {
   }
 }
 
-function applySession(user) {
+function applySession(user, store) {
   state.user = user;
+  state.activeStore = store || null;
   els.currentUserLabel.textContent = user.role === 'owner'
     ? `${user.name} - Administrador general`
     : `${user.name} - ${user.store_name || 'Sin sucursal'}`;
+  els.activeStoreControl.hidden = user.role !== 'owner';
+  if (user.role === 'owner' && store) {
+    els.activeStoreSelect.dataset.currentStore = store.id;
+  }
   document.body.dataset.role = user.role;
   document.querySelectorAll('.tab').forEach((tab) => {
     const view = tab.dataset.view;
@@ -269,6 +278,11 @@ async function loadAdminData() {
 
 function renderStores(stores) {
   els.userStore.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
+  if (state.user?.role === 'owner') {
+    const currentStoreId = els.activeStoreSelect.dataset.currentStore || state.activeStore?.id || stores[0]?.id || '';
+    els.activeStoreSelect.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
+    els.activeStoreSelect.value = currentStoreId;
+  }
   els.storeForm.hidden = state.user?.role !== 'owner';
   els.storesList.innerHTML = stores.map((store) => `
     <div class="data-row">
@@ -281,6 +295,25 @@ function renderStores(stores) {
     </div>
   `).join('') || '<div class="empty">Sin sucursales.</div>';
   renderIcons();
+}
+
+async function changeActiveStore() {
+  if (state.user?.role !== 'owner') return;
+  const storeId = els.activeStoreSelect.value;
+  try {
+    const data = await api('/api/active-store', {
+      method: 'PUT',
+      body: JSON.stringify({ store_id: storeId })
+    });
+    state.activeStore = data.store;
+    els.activeStoreSelect.dataset.currentStore = data.store.id;
+    state.cart.clear();
+    renderCart();
+    await Promise.all([loadProducts(), refreshSummary(), loadSales(), loadReports()]);
+    showToast(`Sucursal activa: ${data.store.name}`);
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function handleStoreListClick(event) {

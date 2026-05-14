@@ -166,9 +166,10 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const user = loginUser(body.username, body.password);
     const token = randomUUID();
-    sessions.set(token, { userId: user.id, createdAt: Date.now() });
+    sessions.set(token, { userId: user.id, activeStoreId: user.store_id || DEFAULT_STORE_ID, createdAt: Date.now() });
     res.setHeader('Set-Cookie', `sgi_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
-    sendJson(res, 200, { user });
+    const ctx = getRequestContextFromSession(token);
+    sendJson(res, 200, { user: ctx.user, store: ctx.store });
     return;
   }
 
@@ -184,6 +185,13 @@ async function handleApi(req, res, url) {
 
   if (method === 'GET' && url.pathname === '/api/session') {
     sendJson(res, 200, { user: ctx.user, store: ctx.store });
+    return;
+  }
+
+  if (method === 'PUT' && url.pathname === '/api/active-store') {
+    requireRole(ctx, ['owner']);
+    const store = setActiveStore(req, await readJson(req));
+    sendJson(res, 200, { store });
     return;
   }
 
@@ -684,6 +692,11 @@ function getRequestContext(req) {
     error.status = 401;
     throw error;
   }
+  return getRequestContextFromSession(token);
+}
+
+function getRequestContextFromSession(token) {
+  const session = sessions.get(token);
   const user = db.prepare(`
     SELECT u.id, u.store_id, u.name, u.username, u.role, u.active, s.name AS store_name
     FROM users u
@@ -696,7 +709,7 @@ function getRequestContext(req) {
     error.status = 401;
     throw error;
   }
-  const workStoreId = user.store_id || DEFAULT_STORE_ID;
+  const workStoreId = resolveActiveStoreId(session, user);
   const workStore = db.prepare('SELECT id, name FROM stores WHERE id = ?').get(workStoreId);
   return {
     user: publicUser(user),
@@ -704,6 +717,25 @@ function getRequestContext(req) {
     store: workStore || { id: workStoreId, name: 'Sucursal Principal' },
     isOwner: user.role === 'owner'
   };
+}
+
+function resolveActiveStoreId(session, user) {
+  if (user.role !== 'owner') return user.store_id;
+  const requestedStoreId = session.activeStoreId || DEFAULT_STORE_ID;
+  const store = db.prepare('SELECT id FROM stores WHERE id = ?').get(requestedStoreId);
+  if (store) return store.id;
+  session.activeStoreId = DEFAULT_STORE_ID;
+  return DEFAULT_STORE_ID;
+}
+
+function setActiveStore(req, input) {
+  const token = getSessionToken(req);
+  const session = token ? sessions.get(token) : null;
+  const storeId = String(input.store_id || input.storeId || '').trim();
+  const store = db.prepare('SELECT id, name, license_status, created_at, updated_at FROM stores WHERE id = ?').get(storeId);
+  if (!store) throw new Error('Sucursal no encontrada');
+  session.activeStoreId = store.id;
+  return store;
 }
 
 function requireRole(ctx, roles) {
