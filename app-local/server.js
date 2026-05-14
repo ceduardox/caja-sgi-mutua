@@ -101,7 +101,11 @@ function migrateLocalDatabase() {
   if (!columns.includes('cash_received')) db.exec('ALTER TABLE sales ADD COLUMN cash_received REAL');
   if (!columns.includes('cash_change')) db.exec('ALTER TABLE sales ADD COLUMN cash_change REAL');
   if (!columns.includes('qr_transaction_code')) db.exec('ALTER TABLE sales ADD COLUMN qr_transaction_code TEXT');
+  if (!columns.includes('void_reason')) db.exec('ALTER TABLE sales ADD COLUMN void_reason TEXT');
+  if (!columns.includes('voided_by')) db.exec('ALTER TABLE sales ADD COLUMN voided_by TEXT');
+  if (!columns.includes('voided_at')) db.exec('ALTER TABLE sales ADD COLUMN voided_at TEXT');
   migrateUsersTable();
+  repairLegacyUserForeignKeys();
 }
 
 function migrateUsersTable() {
@@ -144,6 +148,130 @@ function migrateUsersTable() {
       FROM users_old_role
     `);
     db.exec('DROP TABLE users_old_role');
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+function repairLegacyUserForeignKeys() {
+  const brokenTables = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND sql LIKE '%users_old_role%'
+  `).all();
+  if (brokenTables.length === 0) return;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('PRAGMA legacy_alter_table = ON');
+  try {
+    if (brokenTables.some((table) => table.name === 'inventory_movements')) {
+      db.exec('ALTER TABLE inventory_movements RENAME TO inventory_movements_old_user_fk');
+      db.exec(`
+        CREATE TABLE inventory_movements (
+          id TEXT PRIMARY KEY,
+          store_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          movement_type TEXT NOT NULL CHECK (movement_type IN ('initial', 'purchase', 'sale', 'adjustment', 'return', 'void')),
+          quantity INTEGER NOT NULL,
+          previous_stock INTEGER NOT NULL,
+          new_stock INTEGER NOT NULL,
+          reason TEXT,
+          related_sale_id TEXT,
+          user_id TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (store_id) REFERENCES stores(id),
+          FOREIGN KEY (product_id) REFERENCES products(id),
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO inventory_movements (
+          id, store_id, product_id, movement_type, quantity, previous_stock,
+          new_stock, reason, related_sale_id, user_id, created_at
+        )
+        SELECT id, store_id, product_id, movement_type, quantity, previous_stock,
+          new_stock, reason, related_sale_id, user_id, created_at
+        FROM inventory_movements_old_user_fk
+      `);
+      db.exec('DROP TABLE inventory_movements_old_user_fk');
+    }
+
+    if (brokenTables.some((table) => table.name === 'cash_sessions')) {
+      db.exec('ALTER TABLE cash_sessions RENAME TO cash_sessions_old_user_fk');
+      db.exec(`
+        CREATE TABLE cash_sessions (
+          id TEXT PRIMARY KEY,
+          store_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          opened_by TEXT NOT NULL,
+          closed_by TEXT,
+          opening_amount REAL NOT NULL DEFAULT 0,
+          closing_amount REAL,
+          expected_amount REAL,
+          status TEXT NOT NULL CHECK (status IN ('open', 'closed')) DEFAULT 'open',
+          opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          closed_at TEXT,
+          FOREIGN KEY (store_id) REFERENCES stores(id),
+          FOREIGN KEY (device_id) REFERENCES devices(id),
+          FOREIGN KEY (opened_by) REFERENCES users(id),
+          FOREIGN KEY (closed_by) REFERENCES users(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO cash_sessions (
+          id, store_id, device_id, opened_by, closed_by, opening_amount,
+          closing_amount, expected_amount, status, opened_at, closed_at
+        )
+        SELECT id, store_id, device_id, opened_by, closed_by, opening_amount,
+          closing_amount, expected_amount, status, opened_at, closed_at
+        FROM cash_sessions_old_user_fk
+      `);
+      db.exec('DROP TABLE cash_sessions_old_user_fk');
+    }
+
+    if (brokenTables.some((table) => table.name === 'sales')) {
+      db.exec('ALTER TABLE sales RENAME TO sales_old_user_fk');
+      db.exec(`
+        CREATE TABLE sales (
+          id TEXT PRIMARY KEY,
+          store_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          cash_session_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          subtotal REAL NOT NULL,
+          discount_total REAL NOT NULL DEFAULT 0,
+          total REAL NOT NULL,
+          payment_method TEXT NOT NULL DEFAULT 'cash',
+          cash_received REAL,
+          cash_change REAL,
+          qr_transaction_code TEXT,
+          status TEXT NOT NULL CHECK (status IN ('completed', 'void')) DEFAULT 'completed',
+          void_reason TEXT,
+          voided_by TEXT,
+          voided_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          synced_at TEXT,
+          FOREIGN KEY (store_id) REFERENCES stores(id),
+          FOREIGN KEY (device_id) REFERENCES devices(id),
+          FOREIGN KEY (cash_session_id) REFERENCES cash_sessions(id),
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (voided_by) REFERENCES users(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO sales (
+          id, store_id, device_id, cash_session_id, user_id, subtotal, discount_total,
+          total, payment_method, cash_received, cash_change, qr_transaction_code,
+          status, void_reason, voided_by, voided_at, created_at, synced_at
+        )
+        SELECT id, store_id, device_id, cash_session_id, user_id, subtotal, discount_total,
+          total, payment_method, cash_received, cash_change, qr_transaction_code,
+          status, void_reason, voided_by, voided_at, created_at, synced_at
+        FROM sales_old_user_fk
+      `);
+      db.exec('DROP TABLE sales_old_user_fk');
+    }
+  } finally {
+    db.exec('PRAGMA legacy_alter_table = OFF');
     db.exec('PRAGMA foreign_keys = ON');
   }
 }
@@ -265,6 +393,24 @@ async function handleApi(req, res, url) {
 
   if (method === 'GET' && url.pathname === '/api/sales') {
     sendJson(res, 200, { sales: listSales(ctx) });
+    return;
+  }
+
+  const salePaymentMatch = url.pathname.match(/^\/api\/sales\/([^/]+)\/payment$/);
+  if (salePaymentMatch && method === 'PATCH') {
+    requireRole(ctx, ['owner', 'branch_admin']);
+    const sale = updateSalePayment(ctx, salePaymentMatch[1], await readJson(req));
+    enqueueSync(ctx, 'sale', sale.id, 'update', sale);
+    sendJson(res, 200, { sale });
+    return;
+  }
+
+  const saleVoidMatch = url.pathname.match(/^\/api\/sales\/([^/]+)\/void$/);
+  if (saleVoidMatch && method === 'POST') {
+    requireRole(ctx, ['owner', 'branch_admin']);
+    const sale = voidSale(ctx, saleVoidMatch[1], await readJson(req));
+    enqueueSync(ctx, 'sale', sale.id, 'void', sale);
+    sendJson(res, 200, { sale });
     return;
   }
 
@@ -518,7 +664,9 @@ function ensureCashSession(ctx) {
 
 function getSale(ctx, id) {
   const sale = db.prepare(`
-    SELECT id, subtotal, discount_total, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
+    SELECT
+      id, subtotal, discount_total, total, payment_method, cash_received, cash_change,
+      qr_transaction_code, status, void_reason, voided_by, voided_at, created_at
     FROM sales
     WHERE id = ? AND store_id = ?
   `).get(id, ctx.storeId);
@@ -536,12 +684,146 @@ function getSale(ctx, id) {
 
 function listSales(ctx) {
   return db.prepare(`
-    SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
-    FROM sales
-    WHERE store_id = ?
-    ORDER BY created_at DESC
+    SELECT
+      s.id, s.total, s.payment_method, s.cash_received, s.cash_change, s.qr_transaction_code,
+      s.status, s.void_reason, s.voided_at, u.name AS cashier_name, vu.name AS voided_by_name, s.created_at
+    FROM sales s
+    LEFT JOIN users u ON u.id = s.user_id
+    LEFT JOIN users vu ON vu.id = s.voided_by
+    WHERE s.store_id = ?
+    ORDER BY s.created_at DESC
     LIMIT 50
   `).all(ctx.storeId);
+}
+
+function updateSalePayment(ctx, id, input) {
+  const sale = getEditableSale(ctx, id);
+  const paymentMethod = normalizePaymentMethod(input.payment_method ?? input.paymentMethod);
+  const payment = normalizePaymentDetails(
+    paymentMethod,
+    sale.total,
+    input.cash_received ?? input.cashReceived,
+    cleanOptional(input.qr_transaction_code ?? input.qrTransactionCode)
+  );
+  const reason = cleanOptional(input.reason) || 'Correccion de pago';
+  const before = saleAuditSnapshot(sale);
+
+  db.prepare(`
+    UPDATE sales
+    SET payment_method = ?, cash_received = ?, cash_change = ?, qr_transaction_code = ?
+    WHERE id = ? AND store_id = ? AND status = 'completed'
+  `).run(paymentMethod, payment.cash_received, payment.cash_change, payment.qr_transaction_code, id, ctx.storeId);
+
+  const updated = getSale(ctx, id);
+  insertSaleAudit(ctx, id, 'payment_update', reason, before, saleAuditSnapshot(updated));
+  return updated;
+}
+
+function voidSale(ctx, id, input) {
+  const sale = getEditableSale(ctx, id);
+  const reason = cleanOptional(input.reason);
+  if (!reason) throw new Error('El motivo de anulacion es obligatorio');
+  const items = db.prepare(`
+    SELECT product_id, product_name, quantity
+    FROM sale_items
+    WHERE sale_id = ?
+  `).all(id);
+  const before = saleAuditSnapshot(sale);
+  const now = new Date().toISOString();
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`
+      UPDATE sales
+      SET status = 'void', void_reason = ?, voided_by = ?, voided_at = ?
+      WHERE id = ? AND store_id = ? AND status = 'completed'
+    `).run(reason, ctx.user.id, now, id, ctx.storeId);
+
+    const productStmt = db.prepare('SELECT stock FROM products WHERE id = ? AND store_id = ?');
+    const restoreStock = db.prepare(`
+      UPDATE products
+      SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND store_id = ?
+    `);
+    const insertMovement = db.prepare(`
+      INSERT INTO inventory_movements (
+        id, store_id, product_id, movement_type, quantity, previous_stock,
+        new_stock, reason, related_sale_id, user_id
+      ) VALUES (?, ?, ?, 'void', ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const item of items) {
+      const product = productStmt.get(item.product_id, ctx.storeId);
+      if (!product) continue;
+      const previousStock = Number(product.stock || 0);
+      const newStock = previousStock + item.quantity;
+      restoreStock.run(item.quantity, item.product_id, ctx.storeId);
+      insertMovement.run(
+        randomUUID(),
+        ctx.storeId,
+        item.product_id,
+        item.quantity,
+        previousStock,
+        newStock,
+        `Anulacion de venta: ${reason}`,
+        id,
+        ctx.user.id
+      );
+    }
+
+    const updated = getSale(ctx, id);
+    insertSaleAudit(ctx, id, 'void', reason, before, saleAuditSnapshot(updated));
+    db.exec('COMMIT');
+    return updated;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function getEditableSale(ctx, id) {
+  const sale = db.prepare(`
+    SELECT
+      id, store_id, total, payment_method, cash_received, cash_change,
+      qr_transaction_code, status, void_reason, voided_by, voided_at, created_at
+    FROM sales
+    WHERE id = ? AND store_id = ?
+  `).get(id, ctx.storeId);
+  if (!sale) throw new Error('Venta no encontrada');
+  if (sale.status !== 'completed') throw new Error('La venta ya esta anulada');
+  return sale;
+}
+
+function insertSaleAudit(ctx, saleId, action, reason, before, after) {
+  db.prepare(`
+    INSERT INTO sale_audit_logs (
+      id, store_id, sale_id, user_id, action, reason, before_json, after_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    randomUUID(),
+    ctx.storeId,
+    saleId,
+    ctx.user.id,
+    action,
+    reason || null,
+    JSON.stringify(before),
+    JSON.stringify(after)
+  );
+}
+
+function saleAuditSnapshot(sale) {
+  return {
+    id: sale.id,
+    total: normalizeMoney(sale.total),
+    payment_method: sale.payment_method,
+    cash_received: sale.cash_received,
+    cash_change: sale.cash_change,
+    qr_transaction_code: sale.qr_transaction_code,
+    status: sale.status,
+    void_reason: sale.void_reason,
+    voided_by: sale.voided_by,
+    voided_at: sale.voided_at
+  };
 }
 
 function getSummary(ctx) {
@@ -633,10 +915,14 @@ function getReports(ctx, params) {
   `).all(ctx.storeId, fromStamp, toStamp);
 
   const sales = db.prepare(`
-    SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
-    FROM sales
-    WHERE store_id = ? AND created_at BETWEEN ? AND ?
-    ORDER BY created_at DESC
+    SELECT
+      s.id, s.total, s.payment_method, s.cash_received, s.cash_change, s.qr_transaction_code,
+      s.status, s.void_reason, s.voided_at, u.name AS cashier_name, vu.name AS voided_by_name, s.created_at
+    FROM sales s
+    LEFT JOIN users u ON u.id = s.user_id
+    LEFT JOIN users vu ON vu.id = s.voided_by
+    WHERE s.store_id = ? AND s.created_at BETWEEN ? AND ?
+    ORDER BY s.created_at DESC
     LIMIT 100
   `).all(ctx.storeId, fromStamp, toStamp);
 

@@ -600,6 +600,24 @@ textarea {
   grid-column: 2;
 }
 
+.sale-side,
+.sale-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sale-side {
+  flex-wrap: wrap;
+}
+
+.sale-actions .mini {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+}
+
 .row-icon {
   width: 46px;
   height: 46px;
@@ -647,6 +665,11 @@ textarea {
   color: var(--primary-dark);
   font-size: 12px;
   font-weight: 800;
+}
+
+.pill.void {
+  background: #f4dddd;
+  color: var(--accent);
 }
 
 .stock-low {
@@ -1104,6 +1127,10 @@ select {
   background: #fff;
 }
 
+.sales-report-row {
+  grid-template-columns: 1.35fr 0.7fr 1fr 0.75fr auto;
+}
+
 .table-row:last-child {
   border-bottom: 0;
 }
@@ -1164,6 +1191,10 @@ select {
 
   .table-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .sales-report-row {
+    grid-template-columns: 1fr;
   }
 
   .payment-methods {

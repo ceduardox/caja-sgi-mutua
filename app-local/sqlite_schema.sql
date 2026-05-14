@@ -144,6 +144,21 @@ CREATE TABLE IF NOT EXISTS sale_items (
   FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
+CREATE TABLE IF NOT EXISTS sale_audit_logs (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
+  sale_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('void', 'payment_update')),
+  reason TEXT,
+  before_json TEXT NOT NULL,
+  after_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (store_id) REFERENCES stores(id),
+  FOREIGN KEY (sale_id) REFERENCES sales(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS sync_queue (
   id TEXT PRIMARY KEY,
   store_id TEXT NOT NULL,
@@ -165,4 +180,5 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(store_id, barcode);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(store_id, name);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(store_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sale_audit_sale ON sale_audit_logs(store_id, sale_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);

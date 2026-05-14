@@ -140,6 +140,8 @@ function bindEvents() {
   els.userForm.addEventListener('submit', saveUser);
   els.userRole.addEventListener('change', updateUserFormPermissions);
   els.activeStoreSelect.addEventListener('change', changeActiveStore);
+  els.salesList.addEventListener('click', handleSaleAction);
+  els.reportSalesList.addEventListener('click', handleSaleAction);
   els.scanInput.addEventListener('input', debounce(handleSearch, 140));
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -443,14 +445,18 @@ async function loadProducts(query = '') {
 
 async function loadSales() {
   const data = await api('/api/sales');
+  state.sales = data.sales;
   els.salesList.innerHTML = data.sales.map((sale) => `
     <div class="sale-row">
       <div>
         <span class="row-icon"><i data-lucide="receipt-text"></i></span>
         <strong>${money(sale.total)}</strong>
-        <div class="meta">${formatDate(sale.created_at)} - ${paymentLabel(sale.payment_method)}</div>
+        <div class="meta">${formatDate(sale.created_at)} - ${paymentLabel(sale.payment_method)}${sale.cashier_name ? ` - ${escapeHtml(sale.cashier_name)}` : ''}${sale.status === 'void' ? ` - Anulada: ${escapeHtml(sale.void_reason || '')}` : ''}</div>
       </div>
-      <span class="pill"><i data-lucide="check"></i>${sale.status}</span>
+      <div class="sale-side">
+        <span class="pill ${sale.status === 'void' ? 'void' : ''}"><i data-lucide="${sale.status === 'void' ? 'ban' : 'check'}"></i>${sale.status === 'void' ? 'Anulada' : 'Completada'}</span>
+        ${renderSaleActions(sale)}
+      </div>
     </div>
   `).join('') || '<div class="empty">Sin ventas registradas.</div>';
   renderIcons();
@@ -495,16 +501,100 @@ async function loadReports() {
   `).join('') || '<div class="empty">No hay productos con stock bajo.</div>';
 
   els.reportSalesList.innerHTML = data.sales.map((sale) => `
-    <div class="table-row">
+    <div class="table-row sales-report-row">
       <span>${formatDate(sale.created_at)}</span>
       <span>${sale.id.slice(0, 8)}</span>
-      <span>${paymentLabel(sale.payment_method)}</span>
+      <span>${paymentLabel(sale.payment_method)}${sale.status === 'void' ? ' / Anulada' : ''}</span>
       <strong>${money(sale.total)}</strong>
+      <span>${renderSaleActions(sale)}</span>
     </div>
   `).join('') || '<div class="empty">Sin ventas en este periodo.</div>';
   renderIcons();
 
   renderReportCharts(data);
+}
+
+async function handleSaleAction(event) {
+  const voidButton = event.target.closest('[data-void-sale]');
+  const paymentButton = event.target.closest('[data-edit-payment]');
+  const cashButton = event.target.closest('[data-edit-cash]');
+  if (!voidButton && !paymentButton && !cashButton) return;
+  const saleId = (voidButton || paymentButton || cashButton).dataset.voidSale
+    || (voidButton || paymentButton || cashButton).dataset.editPayment
+    || (voidButton || paymentButton || cashButton).dataset.editCash;
+  const sale = findSale(saleId);
+  if (!sale) return showToast('Venta no encontrada en pantalla');
+  try {
+    if (voidButton) await voidSale(sale);
+    if (paymentButton) await editSalePayment(sale);
+    if (cashButton) await editCashReceived(sale);
+    await Promise.all([loadSales(), refreshSummary(), loadReports(), loadProducts()]);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function voidSale(sale) {
+  const reason = window.prompt(`Motivo para anular la venta ${sale.id.slice(0, 8)}:`);
+  if (reason === null) return;
+  if (!reason.trim()) throw new Error('El motivo de anulacion es obligatorio');
+  if (!window.confirm(`Anular ${money(sale.total)} y devolver stock?`)) return;
+  await api(`/api/sales/${sale.id}/void`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason.trim() })
+  });
+  showToast('Venta anulada y stock devuelto');
+}
+
+async function editSalePayment(sale) {
+  const method = window.prompt('Metodo de pago: efectivo o qr', sale.payment_method === 'qr' ? 'qr' : 'efectivo');
+  if (method === null) return;
+  const normalizedMethod = method.trim().toLowerCase();
+  const paymentMethod = normalizedMethod === 'qr' ? 'qr' : 'cash';
+  const payload = { payment_method: paymentMethod, reason: 'Correccion de metodo de pago' };
+  if (paymentMethod === 'cash') {
+    const received = window.prompt('Monto recibido en efectivo:', sale.cash_received || sale.total);
+    if (received === null) return;
+    payload.cash_received = parseNumber(received);
+  } else {
+    const code = window.prompt('Codigo de transaccion QR (opcional):', sale.qr_transaction_code || '');
+    if (code === null) return;
+    payload.qr_transaction_code = code.trim();
+  }
+  await api(`/api/sales/${sale.id}/payment`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+  showToast('Pago corregido con auditoria');
+}
+
+async function editCashReceived(sale) {
+  const received = window.prompt('Nuevo monto recibido:', sale.cash_received || sale.total);
+  if (received === null) return;
+  await api(`/api/sales/${sale.id}/payment`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      payment_method: 'cash',
+      cash_received: parseNumber(received),
+      reason: 'Correccion de monto recibido'
+    })
+  });
+  showToast('Monto recibido corregido');
+}
+
+function findSale(id) {
+  return [...(state.sales || []), ...(state.lastReport?.sales || [])].find((sale) => sale.id === id);
+}
+
+function renderSaleActions(sale) {
+  if (!canAdjustSales(state.user?.role) || sale.status === 'void') return '';
+  return `
+    <div class="sale-actions">
+      <button class="ghost mini" data-edit-payment="${sale.id}" title="Corregir metodo de pago"><i data-lucide="credit-card"></i></button>
+      <button class="ghost mini" data-edit-cash="${sale.id}" title="Corregir monto recibido"><i data-lucide="banknote"></i></button>
+      <button class="danger mini" data-void-sale="${sale.id}" title="Anular venta"><i data-lucide="ban"></i></button>
+    </div>
+  `;
 }
 
 async function handleSearch() {
@@ -1314,10 +1404,20 @@ function canManageAdmin(role) {
   return role === 'owner' || role === 'branch_admin';
 }
 
+function canAdjustSales(role) {
+  return role === 'owner' || role === 'branch_admin';
+}
+
 function canAccessView(role, viewId) {
   if (role === 'owner' || role === 'branch_admin') return true;
   if (role === 'editor') return viewId !== 'adminView';
   return viewId === 'posView';
+}
+
+function parseNumber(value) {
+  const number = Number(String(value || '').replace(',', '.'));
+  if (!Number.isFinite(number)) throw new Error('Monto invalido');
+  return number;
 }
 
 function trimLabel(value) {
