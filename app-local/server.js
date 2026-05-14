@@ -1391,7 +1391,7 @@ function loadEnvFile(envPath) {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (!(key in process.env)) process.env[key] = value;
+    if (process.env[key] === undefined) process.env[key] = value;
   }
 }
 
