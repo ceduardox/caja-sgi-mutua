@@ -55,10 +55,17 @@ const server = createServer(async (req, res) => {
   }
 });
 
+server.on('error', (error) => {
+  console.error(`No se pudo iniciar SGI Market Caja en el puerto ${PORT}: ${error.message}`);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`SGI Market Caja local: http://localhost:${PORT}`);
   console.log(`Base local SQLite: ${DB_PATH}`);
 });
+
+module.exports = { server };
 
 function seedLocalData() {
   db.prepare(`

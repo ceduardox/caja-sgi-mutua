@@ -1,15 +1,17 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const { join } = require('node:path');
 const { existsSync, mkdirSync } = require('node:fs');
+const { createServer } = require('node:net');
 
-const APP_PORT = process.env.PORT || '4173';
+let appPort = process.env.PORT || '4173';
 
 let mainWindow;
 
-function startLocalServer() {
+async function startLocalServer() {
   const dataDir = join(app.getPath('userData'), 'data');
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
-  process.env.PORT = APP_PORT;
+  appPort = await findAvailablePort(Number(appPort));
+  process.env.PORT = String(appPort);
   process.env.SGI_DATA_DIR = dataDir;
   require(join(__dirname, '..', 'app-local', 'server.js'));
 }
@@ -30,8 +32,8 @@ async function createWindow() {
   });
 
   try {
-    await waitForServer(`http://localhost:${APP_PORT}/api/health`);
-    await mainWindow.loadURL(`http://localhost:${APP_PORT}`);
+    await waitForServer(`http://localhost:${appPort}/api/health`);
+    await mainWindow.loadURL(`http://localhost:${appPort}`);
   } catch (error) {
     dialog.showErrorBox('SGI Market Caja', `No se pudo iniciar la caja local.\n\n${error.message}`);
     app.quit();
@@ -51,9 +53,27 @@ async function waitForServer(url) {
   throw new Error('El servidor local no respondio a tiempo.');
 }
 
-app.whenReady().then(() => {
-  startLocalServer();
-  createWindow();
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const tester = createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => {
+        tester.close(() => resolve(true));
+      })
+      .listen(port, '127.0.0.1');
+  });
+}
+
+async function findAvailablePort(startPort) {
+  for (let port = startPort; port < startPort + 40; port += 1) {
+    if (await isPortAvailable(port)) return port;
+  }
+  throw new Error('No hay puertos locales disponibles para iniciar la caja.');
+}
+
+app.whenReady().then(async () => {
+  await startLocalServer();
+  await createWindow();
 });
 
 app.on('window-all-closed', () => {
