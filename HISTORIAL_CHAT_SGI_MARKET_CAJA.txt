@@ -152,3 +152,11 @@ Dominio previsto cloud: caja.sgimarket.com
 - Si cloud responde OK, marca eventos como synced.
 - Si falla internet o Railway, deja eventos en failed/pending para reintentar.
 - El cloud registra o actualiza automaticamente el dispositivo que sincroniza.
+
+16. Ajuste instalador cloud URL
+- Se detecto que .env no se empaqueta dentro del .exe porque esta ignorado por git.
+- Se creo .env.example con variables publicas no secretas:
+  CLOUD_PUBLIC_URL=https://caja.sgimarket.com
+  SGI_SYNC_INTERVAL_SECONDS=300
+- La app local ahora lee .env y tambien .env.example.
+- Esto permite que el .exe instalado sepa a que cloud conectarse sin incluir secretos.

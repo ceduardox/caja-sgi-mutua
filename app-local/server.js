@@ -292,6 +292,7 @@ async function handleApi(req, res, url) {
       mode: 'local',
       storeId: DEFAULT_STORE_ID,
       deviceId: DEVICE_ID,
+      cloudUrl: CLOUD_PUBLIC_URL || null,
       now: new Date().toISOString()
     });
     return;
@@ -1074,8 +1075,20 @@ function loginUser(username, password) {
     LEFT JOIN stores s ON s.id = u.store_id
     WHERE u.username = ?
   `).get(cleanUsername);
-  if (!user || !user.active || !verifyPassword(password, user.password_hash)) {
-    throw new Error('Usuario o contrasena incorrectos');
+  if (!user) {
+    const error = new Error('Usuario no existe en esta PC');
+    error.code = 'LOCAL_USER_NOT_FOUND';
+    throw error;
+  }
+  if (!user.active) {
+    const error = new Error('Usuario local inactivo');
+    error.code = 'LOCAL_USER_INACTIVE';
+    throw error;
+  }
+  if (!verifyPassword(password, user.password_hash)) {
+    const error = new Error('Contrasena incorrecta para el usuario local');
+    error.code = 'LOCAL_BAD_PASSWORD';
+    throw error;
   }
   return publicUser(user);
 }
@@ -1091,7 +1104,7 @@ async function loginUserWithCloudFallback(username, password) {
       await importCloudLogin(username, password);
       return loginUser(username, password);
     } catch (cloudError) {
-      const error = new Error(cloudError.message || localError.message || 'Usuario o contrasena incorrectos');
+      const error = new Error(buildLoginErrorMessage(localError, cloudError));
       error.status = cloudError.status || 401;
       throw error;
     }
@@ -1106,7 +1119,7 @@ async function importCloudLogin(username, password) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.error || 'No se pudo iniciar sesion con la nube');
+    const error = new Error(data.error || `Cloud rechazo el login (${response.status})`);
     error.status = response.status;
     throw error;
   }
@@ -1125,6 +1138,15 @@ async function importCloudLogin(username, password) {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function buildLoginErrorMessage(localError, cloudError) {
+  if (cloudError.name === 'TypeError' || /fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|No es posible conectar/i.test(cloudError.message || '')) {
+    return `${localError.message}. No se pudo conectar al cloud ${CLOUD_PUBLIC_URL}. Revisa internet, dominio o Railway.`;
+  }
+  if (cloudError.status === 401) return 'Usuario o contrasena incorrectos en cloud';
+  if (cloudError.status === 403) return cloudError.message || 'Usuario sin permiso para usar la caja local';
+  return `${localError.message}. Cloud: ${cloudError.message || 'error desconocido'}`;
 }
 
 function upsertCloudStore(store) {
@@ -1345,8 +1367,14 @@ function getSessionToken(req) {
 }
 
 function loadEnv() {
-  const envPath = join(__dirname, '..', '.env');
-  if (!existsSync(envPath)) return;
+  const envPaths = [join(__dirname, '..', '.env'), join(__dirname, '..', '.env.example')];
+  for (const envPath of envPaths) {
+    if (!existsSync(envPath)) continue;
+    loadEnvFile(envPath);
+  }
+}
+
+function loadEnvFile(envPath) {
   for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const clean = line.trim();
     if (!clean || clean.startsWith('#') || !clean.includes('=')) continue;
