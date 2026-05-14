@@ -745,6 +745,38 @@ textarea {
   font-weight: 800;
 }
 
+.shift-status {
+  margin: 10px 0 12px;
+}
+
+.shift-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.shift-card span,
+.shift-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shift-card strong {
+  font-size: 15px;
+}
+
+.shift-actions {
+  display: grid;
+}
+
+.empty.compact {
+  padding: 6px 0;
+}
+
 .label {
   display: block;
   color: var(--muted);

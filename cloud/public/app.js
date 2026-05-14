@@ -4,6 +4,9 @@ const state = {
   stores: [],
   users: [],
   sales: [],
+  cashShift: null,
+  cashShifts: [],
+  stockMovements: [],
   user: null,
   activeStore: null,
   cart: new Map(),
@@ -31,6 +34,8 @@ const els = {
   todayCount: document.querySelector('#todayCount'),
   lowStock: document.querySelector('#lowStock'),
   pendingSync: document.querySelector('#pendingSync'),
+  cashShiftStatus: document.querySelector('#cashShiftStatus'),
+  cashShiftActions: document.querySelector('#cashShiftActions'),
   connectionDot: document.querySelector('#connectionDot'),
   connectionText: document.querySelector('#connectionText'),
   currentUserLabel: document.querySelector('#currentUserLabel'),
@@ -124,6 +129,8 @@ const els = {
   bestSellersList: document.querySelector('#bestSellersList'),
   lowStockList: document.querySelector('#lowStockList'),
   reportSalesList: document.querySelector('#reportSalesList'),
+  cashShiftList: document.querySelector('#cashShiftList'),
+  stockMovementList: document.querySelector('#stockMovementList'),
   chartsStatus: document.querySelector('#chartsStatus'),
   salesTrendChart: document.querySelector('#salesTrendChart'),
   productsChart: document.querySelector('#productsChart'),
@@ -149,7 +156,9 @@ function boot() {
   setDefaultReportDates();
   bindEvents();
   initializeSession();
-  setInterval(refreshSummary, 15000);
+  setInterval(() => {
+    if (canSell(state.user?.role)) refreshSummary().catch(() => {});
+  }, 15000);
   renderIcons();
 }
 
@@ -167,6 +176,7 @@ function bindEvents() {
   els.activeStoreSelect.addEventListener('change', changeActiveStore);
   els.salesList.addEventListener('click', handleSaleAction);
   els.reportSalesList.addEventListener('click', handleSaleAction);
+  els.cashShiftActions.addEventListener('click', handleCashShiftAction);
   els.scanInput.addEventListener('input', debounce(handleSearch, 140));
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -246,8 +256,8 @@ function bindEvents() {
 async function refreshAll() {
   if (canManageAdmin(state.user?.role)) await loadAdminData();
   const tasks = [loadCategories(), loadProducts('', { manager: state.user?.role === 'editor' }), checkHealth()];
-  if (canSell(state.user?.role)) tasks.push(refreshSummary(), loadSales());
-  if (canViewReports(state.user?.role)) tasks.push(loadReports());
+  if (canSell(state.user?.role)) tasks.push(refreshSummary(), loadSales(), loadOpenCashShift());
+  if (canViewReports(state.user?.role)) tasks.push(loadReports(), loadCashShifts(), loadStockMovements());
   await Promise.all(tasks);
 }
 
@@ -611,6 +621,8 @@ function showView(viewId) {
   if (viewId === 'productsView') els.productSearchInput.focus();
   if (viewId === 'reportsView') {
     loadReports().then(() => window.setTimeout(resizeCharts, 80));
+    loadCashShifts().catch((error) => showToast(error.message));
+    loadStockMovements().catch((error) => showToast(error.message));
   }
 }
 
@@ -679,6 +691,115 @@ async function loadSales() {
       </div>
     </div>
   `).join('') || '<div class="empty">Sin ventas registradas.</div>';
+  renderIcons();
+}
+
+async function loadOpenCashShift() {
+  if (!canSell(state.user?.role)) return;
+  const data = await api('/api/cash-shifts/open');
+  state.cashShift = data.shift || null;
+  renderCashShiftStatus();
+}
+
+function renderCashShiftStatus() {
+  if (!els.cashShiftStatus || !els.cashShiftActions) return;
+  if (!state.cashShift) {
+    els.cashShiftStatus.innerHTML = '<div class="empty compact">Sin turno abierto.</div>';
+    els.cashShiftActions.innerHTML = '<button class="secondary" type="button" data-open-shift><i data-lucide="unlock-keyhole"></i>Abrir turno</button>';
+    renderIcons();
+    return;
+  }
+  els.cashShiftStatus.innerHTML = `
+    <div class="shift-card">
+      <span>Abierto</span>
+      <strong>${formatDate(state.cashShift.opened_at)}</strong>
+      <small>Inicial ${money(state.cashShift.opening_cash || 0)}</small>
+    </div>
+  `;
+  els.cashShiftActions.innerHTML = '<button class="primary small" type="button" data-close-shift><i data-lucide="lock-keyhole"></i>Cerrar caja</button>';
+  renderIcons();
+}
+
+async function handleCashShiftAction(event) {
+  const openButton = event.target.closest('[data-open-shift]');
+  const closeButton = event.target.closest('[data-close-shift]');
+  if (!openButton && !closeButton) return;
+  try {
+    if (openButton) await openCashShift();
+    if (closeButton) await closeCashShift();
+    await Promise.all([loadOpenCashShift(), loadCashShifts()]);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function openCashShift() {
+  const amount = window.prompt('Efectivo inicial en caja:', '0');
+  if (amount === null) return;
+  await api('/api/cash-shifts/open', {
+    method: 'POST',
+    body: JSON.stringify({ opening_cash: parseNumber(amount), store_id: activeStoreId() })
+  });
+  showToast('Turno abierto');
+}
+
+async function closeCashShift() {
+  if (!state.cashShift) return;
+  const amount = window.prompt('Efectivo contado al cerrar:', '0');
+  if (amount === null) return;
+  const notes = window.prompt('Nota del cierre (opcional):', '') ?? '';
+  const data = await api(`/api/cash-shifts/${state.cashShift.id}/close`, {
+    method: 'POST',
+    body: JSON.stringify({ closing_cash: parseNumber(amount), notes })
+  });
+  showToast(`Caja cerrada. Diferencia ${money(data.shift.cash_difference || 0)}`);
+}
+
+async function loadCashShifts() {
+  if (!canViewReports(state.user?.role) && state.user?.role !== 'cashier') return;
+  const storeId = activeStoreId();
+  const data = await api(`/api/cash-shifts${storeId ? `?store_id=${encodeURIComponent(storeId)}` : ''}`);
+  state.cashShifts = data.shifts || [];
+  renderCashShifts();
+}
+
+function renderCashShifts() {
+  if (!els.cashShiftList) return;
+  els.cashShiftList.innerHTML = state.cashShifts.slice(0, 12).map((shift) => `
+    <div class="data-row">
+      <span class="row-icon"><i data-lucide="${shift.status === 'open' ? 'unlock-keyhole' : 'lock-keyhole'}"></i></span>
+      <div>
+        <strong>${escapeHtml(shift.user_name || '')}</strong>
+        <div class="meta">${escapeHtml(shift.store_name || '')} - ${formatDate(shift.opened_at)}</div>
+        <div class="meta">Inicial ${money(shift.opening_cash || 0)}${shift.status === 'closed' ? ` - Contado ${money(shift.closing_cash || 0)} - Dif. ${money(shift.cash_difference || 0)}` : ''}</div>
+      </div>
+      <span class="pill ${shift.status === 'open' ? '' : 'void'}">${shift.status === 'open' ? 'Abierto' : 'Cerrado'}</span>
+    </div>
+  `).join('') || '<div class="empty">Sin cierres registrados.</div>';
+  renderIcons();
+}
+
+async function loadStockMovements() {
+  if (!canViewReports(state.user?.role) && state.user?.role !== 'editor') return;
+  const storeId = activeStoreId();
+  if (!storeId) return;
+  const data = await api(`/api/stock-movements?store_id=${encodeURIComponent(storeId)}`);
+  state.stockMovements = data.movements || [];
+  renderStockMovements();
+}
+
+function renderStockMovements() {
+  if (!els.stockMovementList) return;
+  els.stockMovementList.innerHTML = state.stockMovements.slice(0, 14).map((movement) => `
+    <div class="data-row">
+      <span class="row-icon"><i data-lucide="layers-3"></i></span>
+      <div>
+        <strong>${escapeHtml(movement.product_name || 'Producto eliminado')}</strong>
+        <div class="meta">${stockMovementLabel(movement.movement_type)} - ${movement.quantity} unidades - ${formatDate(movement.created_at)}</div>
+        <div class="meta">${movement.previous_stock ?? ''} -> ${movement.new_stock ?? ''}${movement.user_name ? ` - ${escapeHtml(movement.user_name)}` : ''}</div>
+      </div>
+    </div>
+  `).join('') || '<div class="empty">Sin movimientos de stock.</div>';
   renderIcons();
 }
 
@@ -1678,6 +1799,16 @@ function formatDate(value) {
 
 function paymentLabel(value) {
   const labels = { cash: 'Efectivo', card: 'Tarjeta', qr: 'QR', transfer: 'Transferencia' };
+  return labels[value] || value;
+}
+
+function stockMovementLabel(value) {
+  const labels = {
+    initial: 'Stock inicial',
+    adjustment: 'Ajuste manual',
+    sale: 'Venta',
+    void: 'Anulacion'
+  };
   return labels[value] || value;
 }
 

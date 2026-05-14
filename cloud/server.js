@@ -186,6 +186,37 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/cash-shifts/open') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
+    sendJson(res, 200, { shift: await getOpenCashShift(ctx) });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/cash-shifts') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
+    sendJson(res, 200, { shifts: await listCashShifts(ctx, url.searchParams.get('store_id')) });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/cash-shifts/open') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
+    sendJson(res, 201, { shift: await openCashShift(ctx, await readJson(req)) });
+    return;
+  }
+
+  const cashShiftCloseMatch = url.pathname.match(/^\/api\/cash-shifts\/([^/]+)\/close$/);
+  if (cashShiftCloseMatch && method === 'POST') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
+    sendJson(res, 200, { shift: await closeCashShift(ctx, cashShiftCloseMatch[1], await readJson(req)) });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/stock-movements') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor']);
+    sendJson(res, 200, { movements: await listStockMovements(ctx, url.searchParams.get('store_id')) });
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/sales') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
     sendJson(res, 200, { sales: await listSales(ctx, url.searchParams.get('store_id')) });
@@ -562,6 +593,106 @@ async function updateUserPassword(ctx, id, input) {
   return result.rows[0];
 }
 
+async function getOpenCashShift(ctx) {
+  const result = await pool.query(`
+    SELECT cs.id, cs.store_id, s.name AS store_name, cs.user_id, u.name AS user_name,
+      cs.opened_at, cs.opening_cash::float, cs.closed_at, cs.closing_cash::float,
+      cs.expected_cash::float, cs.cash_difference::float, cs.notes, cs.status
+    FROM cloud_cash_shifts cs
+    JOIN stores s ON s.id = cs.store_id
+    JOIN cloud_users u ON u.id = cs.user_id
+    WHERE cs.user_id = $1 AND cs.status = 'open'
+    LIMIT 1
+  `, [ctx.user.id]);
+  return result.rows[0] || null;
+}
+
+async function openCashShift(ctx, input) {
+  const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
+  const openingCash = normalizeMoney(input.opening_cash || input.openingCash || 0);
+  if (openingCash < 0) throw new HttpError(400, 'El efectivo inicial no puede ser negativo', 'opening_cash');
+  const existing = await getOpenCashShift(ctx);
+  if (existing) throw new HttpError(400, 'Ya tienes un turno abierto');
+  const result = await pool.query(`
+    INSERT INTO cloud_cash_shifts (store_id, user_id, opening_cash, notes)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, store_id, user_id, opened_at, opening_cash::float, status, notes
+  `, [storeId, ctx.user.id, openingCash, cleanOptional(input.notes)]);
+  return result.rows[0];
+}
+
+async function closeCashShift(ctx, id, input) {
+  const shiftResult = await pool.query(`
+    SELECT id, store_id, user_id, opened_at, opening_cash::float, status
+    FROM cloud_cash_shifts
+    WHERE id = $1
+  `, [id]);
+  const shift = shiftResult.rows[0];
+  if (!shift) throw new HttpError(404, 'Turno no encontrado');
+  await resolveStoreId(ctx, shift.store_id);
+  if (shift.user_id !== ctx.user.id && !canAdminStore(ctx.user.role)) throw new HttpError(403, 'No puedes cerrar este turno');
+  if (shift.status !== 'open') throw new HttpError(400, 'El turno ya esta cerrado');
+
+  const closingCash = normalizeMoney(input.closing_cash || input.closingCash || 0);
+  if (closingCash < 0) throw new HttpError(400, 'El efectivo contado no puede ser negativo', 'closing_cash');
+  const expectedCash = await calculateExpectedCash(shift);
+  const difference = roundMoney(closingCash - expectedCash);
+  const result = await pool.query(`
+    UPDATE cloud_cash_shifts
+    SET closed_at = now(), closing_cash = $1, expected_cash = $2, cash_difference = $3,
+      notes = $4, status = 'closed'
+    WHERE id = $5
+    RETURNING id, store_id, user_id, opened_at, opening_cash::float, closed_at,
+      closing_cash::float, expected_cash::float, cash_difference::float, notes, status
+  `, [closingCash, expectedCash, difference, cleanOptional(input.notes), id]);
+  return result.rows[0];
+}
+
+async function calculateExpectedCash(shift) {
+  const result = await pool.query(`
+    SELECT COALESCE(SUM(total), 0)::float AS cash_total
+    FROM cloud_sales
+    WHERE store_id = $1
+      AND cashier_user_id = $2
+      AND payment_method = 'cash'
+      AND status = 'completed'
+      AND local_created_at >= $3
+  `, [shift.store_id, shift.user_id, shift.opened_at]);
+  return roundMoney(Number(shift.opening_cash || 0) + Number(result.rows[0].cash_total || 0));
+}
+
+async function listCashShifts(ctx, requestedStoreId) {
+  const filter = shiftScopeFilter(ctx, requestedStoreId);
+  const result = await pool.query(`
+    SELECT cs.id, cs.store_id, s.name AS store_name, cs.user_id, u.name AS user_name,
+      cs.opened_at, cs.opening_cash::float, cs.closed_at, cs.closing_cash::float,
+      cs.expected_cash::float, cs.cash_difference::float, cs.notes, cs.status
+    FROM cloud_cash_shifts cs
+    JOIN stores s ON s.id = cs.store_id
+    JOIN cloud_users u ON u.id = cs.user_id
+    ${filter.where}
+    ORDER BY cs.opened_at DESC
+    LIMIT 80
+  `, filter.values);
+  return result.rows;
+}
+
+async function listStockMovements(ctx, requestedStoreId) {
+  const storeId = await resolveStoreId(ctx, requestedStoreId);
+  const result = await pool.query(`
+    SELECT sm.id, sm.store_id, sm.product_id, p.name AS product_name, sm.user_id, u.name AS user_name,
+      sm.movement_type, sm.quantity::float, sm.previous_stock::float, sm.new_stock::float,
+      sm.reason, sm.reference_type, sm.reference_id, sm.created_at
+    FROM cloud_stock_movements sm
+    LEFT JOIN cloud_products p ON p.id = sm.product_id
+    LEFT JOIN cloud_users u ON u.id = sm.user_id
+    WHERE sm.store_id = $1
+    ORDER BY sm.created_at DESC
+    LIMIT 120
+  `, [storeId]);
+  return result.rows;
+}
+
 async function listSales(ctx, requestedStoreId) {
   const filter = saleScopeFilter(ctx, 's', requestedStoreId);
   const result = await pool.query(`
@@ -668,6 +799,18 @@ async function createProduct(ctx, input) {
     RETURNING id, store_id, category_id, barcode, sku, name, cost_price::float, sale_price::float,
       stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
   `, [storeId, product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active]);
+  if (Number(result.rows[0].stock || 0) !== 0) {
+    await recordStockMovement(pool, {
+      storeId,
+      productId: result.rows[0].id,
+      userId: ctx.user.id,
+      type: 'initial',
+      quantity: Number(result.rows[0].stock || 0),
+      previousStock: 0,
+      newStock: Number(result.rows[0].stock || 0),
+      reason: 'Alta de producto'
+    });
+  }
   return result.rows[0];
 }
 
@@ -676,6 +819,9 @@ async function updateProduct(ctx, id, input) {
   const product = normalizeProductInput(input);
   product.category_id = await resolveCategoryId(storeId, product.category_id, product.category_name);
   await assertUniqueProductCodes(storeId, product, id);
+  const before = await pool.query('SELECT stock::float FROM cloud_products WHERE id = $1 AND store_id = $2', [id, storeId]);
+  if (before.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
+  const previousStock = Number(before.rows[0].stock || 0);
   const result = await pool.query(`
     UPDATE cloud_products
     SET category_id = $1, barcode = $2, sku = $3, name = $4, cost_price = $5, sale_price = $6,
@@ -685,6 +831,19 @@ async function updateProduct(ctx, id, input) {
       stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
   `, [product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, id, storeId]);
   if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
+  const newStock = Number(result.rows[0].stock || 0);
+  if (previousStock !== newStock) {
+    await recordStockMovement(pool, {
+      storeId,
+      productId: id,
+      userId: ctx.user.id,
+      type: 'adjustment',
+      quantity: roundMoney(newStock - previousStock),
+      previousStock,
+      newStock,
+      reason: 'Edicion manual de stock'
+    });
+  }
   return result.rows[0];
 }
 
@@ -713,28 +872,43 @@ async function createOnlineSale(ctx, input) {
       const unitPrice = Number(product.sale_price || 0);
       const total = roundMoney(unitPrice * quantity);
       subtotal = roundMoney(subtotal + total);
-      normalizedItems.push({ product, quantity, unitPrice, total });
+      const previousStock = Number(product.stock || 0);
+      const newStock = roundMoney(previousStock - quantity);
+      normalizedItems.push({ product, quantity, unitPrice, total, previousStock, newStock });
       await client.query('UPDATE cloud_products SET stock = stock - $1, updated_at = now() WHERE id = $2', [quantity, product.id]);
     }
     const discount = roundMoney(input.discount_total || input.discountTotal || 0);
     const total = roundMoney(subtotal - discount);
     const payment = normalizePaymentDetails(paymentMethod, total, input.cash_received || input.cashReceived, input.qr_transaction_code || input.qrTransactionCode);
     const saleId = randomUUID();
+    const openShift = await findOpenCashShiftForUser(client, ctx.user.id);
     const payload = { online: true, items: normalizedItems.map((item) => ({ product_id: item.product.id, quantity: item.quantity, unit_price: item.unitPrice, total: item.total })) };
-  const saleResult = await client.query(`
+    const saleResult = await client.query(`
       INSERT INTO cloud_sales (
-        id, store_id, cashier_user_id, local_created_at, subtotal, discount_total, total,
+        id, store_id, cashier_user_id, cash_shift_id, local_created_at, subtotal, discount_total, total,
         payment_method, cash_received, cash_change, qr_transaction_code, status, payload_json
-      ) VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,$9,$10,'completed',$11)
+      ) VALUES ($1,$2,$3,$4,now(),$5,$6,$7,$8,$9,$10,$11,'completed',$12)
       RETURNING id, store_id, local_created_at, subtotal::float, discount_total::float,
         local_created_at AS created_at, total::float, payment_method, cash_received::float,
         cash_change::float, qr_transaction_code, status
-    `, [saleId, storeId, ctx.user.id, subtotal, discount, total, paymentMethod, payment.cash_received, payment.cash_change, payment.qr_transaction_code, payload]);
+    `, [saleId, storeId, ctx.user.id, openShift?.id || null, subtotal, discount, total, paymentMethod, payment.cash_received, payment.cash_change, payment.qr_transaction_code, payload]);
     for (const item of normalizedItems) {
       await client.query(`
         INSERT INTO cloud_sale_items (sale_id, product_id, product_name, barcode, quantity, unit_price, total)
         VALUES ($1,$2,$3,$4,$5,$6,$7)
       `, [saleId, item.product.id, item.product.name, item.product.barcode, item.quantity, item.unitPrice, item.total]);
+      await recordStockMovement(client, {
+        storeId,
+        productId: item.product.id,
+        userId: ctx.user.id,
+        type: 'sale',
+        quantity: -Math.abs(item.quantity),
+        previousStock: item.previousStock,
+        newStock: item.newStock,
+        reason: 'Venta',
+        referenceType: 'sale',
+        referenceId: saleId
+      });
     }
     await client.query('COMMIT');
     return {
@@ -796,7 +970,22 @@ async function voidSale(ctx, id, input) {
     if (updated.rowCount === 0) throw new HttpError(404, 'Venta no encontrada');
     for (const item of items.rows) {
       if (!item.product_id) continue;
+      const productBefore = await client.query('SELECT stock::float FROM cloud_products WHERE id = $1 AND store_id = $2 FOR UPDATE', [item.product_id, sale.store_id]);
+      const previousStock = Number(productBefore.rows[0]?.stock || 0);
+      const newStock = roundMoney(previousStock + Number(item.quantity || 0));
       await client.query('UPDATE cloud_products SET stock = stock + $1, updated_at = now() WHERE id = $2 AND store_id = $3', [item.quantity, item.product_id, sale.store_id]);
+      await recordStockMovement(client, {
+        storeId: sale.store_id,
+        productId: item.product_id,
+        userId: ctx.user.id,
+        type: 'void',
+        quantity: Math.abs(Number(item.quantity || 0)),
+        previousStock,
+        newStock,
+        reason: `Anulacion: ${reason}`,
+        referenceType: 'sale',
+        referenceId: id
+      });
     }
     await client.query(`
       INSERT INTO cloud_sale_audit_logs (store_id, sale_id, user_id, action, reason, before_json, after_json)
@@ -831,6 +1020,36 @@ async function insertSaleAudit(ctx, storeId, saleId, action, reason, before, aft
     INSERT INTO cloud_sale_audit_logs (store_id, sale_id, user_id, action, reason, before_json, after_json)
     VALUES ($1,$2,$3,$4,$5,$6,$7)
   `, [storeId, saleId, ctx.user.id, action, reason || null, before, after]);
+}
+
+async function findOpenCashShiftForUser(db, userId) {
+  const result = await db.query(`
+    SELECT id, store_id, user_id, opened_at, opening_cash::float
+    FROM cloud_cash_shifts
+    WHERE user_id = $1 AND status = 'open'
+    LIMIT 1
+  `, [userId]);
+  return result.rows[0] || null;
+}
+
+async function recordStockMovement(db, movement) {
+  await db.query(`
+    INSERT INTO cloud_stock_movements (
+      store_id, product_id, user_id, movement_type, quantity,
+      previous_stock, new_stock, reason, reference_type, reference_id
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+  `, [
+    movement.storeId,
+    movement.productId,
+    movement.userId,
+    movement.type,
+    movement.quantity,
+    movement.previousStock,
+    movement.newStock,
+    movement.reason || null,
+    movement.referenceType || null,
+    movement.referenceId || null
+  ]);
 }
 
 function saleAuditSnapshot(sale) {
@@ -1072,6 +1291,24 @@ function userScopeValues(ctx) {
   if (ctx.user.role === 'master_admin') return [];
   if (ctx.user.role === 'tenant_owner') return [ctx.user.tenant_id];
   return [ctx.user.store_id];
+}
+
+function shiftScopeFilter(ctx, requestedStoreId) {
+  if (ctx.user.role === 'master_admin') {
+    const requested = cleanOptional(requestedStoreId);
+    return requested ? { where: 'WHERE cs.store_id = $1', values: [requested] } : { where: '', values: [] };
+  }
+  if (ctx.user.role === 'tenant_owner') {
+    const requested = cleanOptional(requestedStoreId);
+    if (requested) return { where: 'WHERE cs.store_id = $1 AND s.tenant_id = $2', values: [requested, ctx.user.tenant_id] };
+    return { where: 'WHERE s.tenant_id = $1', values: [ctx.user.tenant_id] };
+  }
+  if (ctx.user.role === 'branch_admin') return { where: 'WHERE cs.store_id = $1', values: [ctx.user.store_id] };
+  return { where: 'WHERE cs.store_id = $1 AND cs.user_id = $2', values: [ctx.user.store_id, ctx.user.id] };
+}
+
+function canAdminStore(role) {
+  return ['master_admin', 'tenant_owner', 'branch_admin'].includes(role);
 }
 
 function publicUser(user) {

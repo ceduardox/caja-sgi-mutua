@@ -109,6 +109,12 @@
           </div>
         </section>
 
+        <section class="panel shift-panel">
+          <p class="eyebrow with-icon"><i data-lucide="archive-restore"></i>Turno de caja</p>
+          <div id="cashShiftStatus" class="shift-status"></div>
+          <div id="cashShiftActions" class="shift-actions"></div>
+        </section>
+
         <section class="panel">
           <p class="eyebrow with-icon"><i data-lucide="package"></i>Inventario rapido</p>
           <div id="productList" class="product-list compact"></div>
@@ -215,6 +221,17 @@
           <button id="exportSalesButton" class="secondary"><i data-lucide="download"></i>Exportar CSV</button>
         </div>
         <div id="reportSalesList" class="table-list"></div>
+      </section>
+
+      <section class="report-columns">
+        <div class="panel">
+          <p class="eyebrow with-icon"><i data-lucide="archive-restore"></i>Cierres de caja</p>
+          <div id="cashShiftList" class="data-list"></div>
+        </div>
+        <div class="panel">
+          <p class="eyebrow with-icon"><i data-lucide="layers-3"></i>Movimientos de stock</p>
+          <div id="stockMovementList" class="data-list"></div>
+        </div>
       </section>
     </main>
 

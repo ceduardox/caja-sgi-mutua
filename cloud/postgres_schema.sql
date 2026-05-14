@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS cloud_sales (
   store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
   device_id TEXT,
   cashier_user_id UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
+  cash_shift_id UUID,
   local_created_at TIMESTAMPTZ NOT NULL,
   subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
   discount_total NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -112,6 +113,7 @@ CREATE TABLE IF NOT EXISTS cloud_sales (
 );
 
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cashier_user_id UUID REFERENCES cloud_users(id) ON DELETE SET NULL;
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_shift_id UUID;
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_received NUMERIC(12,2);
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_change NUMERIC(12,2);
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS qr_transaction_code TEXT;
@@ -132,6 +134,38 @@ CREATE TABLE IF NOT EXISTS cloud_sale_items (
 
 ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES cloud_categories(id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS cloud_cash_shifts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  opening_cash NUMERIC(12,2) NOT NULL DEFAULT 0,
+  closed_at TIMESTAMPTZ,
+  closing_cash NUMERIC(12,2),
+  expected_cash NUMERIC(12,2),
+  cash_difference NUMERIC(12,2),
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_cash_shifts_one_open ON cloud_cash_shifts(user_id) WHERE status = 'open';
+
+CREATE TABLE IF NOT EXISTS cloud_stock_movements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES cloud_products(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
+  movement_type TEXT NOT NULL,
+  quantity NUMERIC(12,2) NOT NULL,
+  previous_stock NUMERIC(12,2),
+  new_stock NUMERIC(12,2),
+  reason TEXT,
+  reference_type TEXT,
+  reference_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS cloud_sale_audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -168,5 +202,7 @@ CREATE INDEX IF NOT EXISTS idx_stores_tenant ON stores(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_products_store_name ON cloud_products(store_id, name);
 CREATE INDEX IF NOT EXISTS idx_cloud_products_store_barcode ON cloud_products(store_id, barcode);
 CREATE INDEX IF NOT EXISTS idx_cloud_sales_store_date ON cloud_sales(store_id, local_created_at);
+CREATE INDEX IF NOT EXISTS idx_cloud_cash_shifts_store_date ON cloud_cash_shifts(store_id, opened_at);
+CREATE INDEX IF NOT EXISTS idx_cloud_stock_movements_product_date ON cloud_stock_movements(store_id, product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_cloud_sale_audit_sale ON cloud_sale_audit_logs(store_id, sale_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_events_status ON sync_events(status, created_at);
