@@ -25,6 +25,7 @@ const els = {
   connectionDot: document.querySelector('#connectionDot'),
   connectionText: document.querySelector('#connectionText'),
   currentUserLabel: document.querySelector('#currentUserLabel'),
+  logoutButton: document.querySelector('#logoutButton'),
   activeStoreControl: document.querySelector('#activeStoreControl'),
   activeStoreSelect: document.querySelector('#activeStoreSelect'),
   loginOverlay: document.querySelector('#loginOverlay'),
@@ -204,6 +205,7 @@ function bindEvents() {
   }, true);
   els.loadReportsButton.addEventListener('click', loadReports);
   els.exportSalesButton.addEventListener('click', exportReportSales);
+  els.logoutButton.addEventListener('click', logout);
   window.addEventListener('resize', debounce(resizeCharts, 120));
   if (window.ResizeObserver) {
     chartsResizeObserver = new ResizeObserver(() => resizeCharts());
@@ -263,6 +265,7 @@ function applySession(user, store) {
     ? `${user.name} - Administrador general`
     : `${user.name} - ${user.store_name || 'Sin sucursal'}`;
   els.activeStoreControl.hidden = !isGlobalAdmin(user.role);
+  els.logoutButton.hidden = false;
   if (isGlobalAdmin(user.role) && store) {
     els.activeStoreSelect.dataset.currentStore = store.id;
   }
@@ -276,6 +279,21 @@ function applySession(user, store) {
     showView('posView');
   }
   renderIcons();
+}
+
+async function logout() {
+  try {
+    await api('/api/logout', { method: 'POST' });
+  } catch {
+    // La salida local igual debe limpiar la pantalla aunque el servidor no responda.
+  }
+  state.user = null;
+  state.activeStore = null;
+  state.cart.clear();
+  els.logoutButton.hidden = true;
+  els.loginOverlay.classList.add('active');
+  setLoginMessage('', 'info');
+  renderCart();
 }
 
 async function loadAdminData() {

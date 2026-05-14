@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS cloud_users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS cloud_sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY,
   store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
@@ -151,6 +158,8 @@ CREATE TABLE IF NOT EXISTS sync_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cloud_users_role ON cloud_users(role);
+CREATE INDEX IF NOT EXISTS idx_cloud_sessions_user ON cloud_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_cloud_sessions_expires ON cloud_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_stores_tenant ON stores(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_products_store_name ON cloud_products(store_id, name);
 CREATE INDEX IF NOT EXISTS idx_cloud_products_store_barcode ON cloud_products(store_id, barcode);

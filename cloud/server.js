@@ -1,7 +1,7 @@
 const { createServer } = require('node:http');
 const { readFileSync, existsSync } = require('node:fs');
 const { join, extname } = require('node:path');
-const { randomUUID, randomBytes, scryptSync, timingSafeEqual } = require('node:crypto');
+const { randomUUID, randomBytes, scryptSync, timingSafeEqual, createHash } = require('node:crypto');
 const { Pool } = require('pg');
 
 loadEnv();
@@ -11,6 +11,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = join(ROOT, 'public');
 const SCHEMA_PATH = join(ROOT, 'postgres_schema.sql');
 const COOKIE_NAME = process.env.COOKIE_NAME || 'sgi_market_session';
+const SESSION_DAYS = Number(process.env.SESSION_DAYS || 7);
 const sessions = new Map();
 
 if (!process.env.DATABASE_URL) {
@@ -76,6 +77,7 @@ async function handleApi(req, res, url) {
     const user = await loginUser(body.username, body.password);
     const token = randomToken();
     sessions.set(token, { userId: user.id, createdAt: Date.now() });
+    await saveSession(token, user.id);
     setSessionCookie(res, token);
     sendJson(res, 200, { user });
     return;
@@ -84,6 +86,7 @@ async function handleApi(req, res, url) {
   if (method === 'POST' && url.pathname === '/api/logout') {
     const token = getSessionToken(req);
     if (token) sessions.delete(token);
+    if (token) await deleteSession(token);
     clearSessionCookie(res);
     sendJson(res, 200, { ok: true });
     return;
@@ -296,7 +299,7 @@ async function getBootstrapStores(user) {
 
 async function getRequestContext(req) {
   const token = getSessionToken(req);
-  const session = token ? sessions.get(token) : null;
+  const session = token ? await getStoredSession(token) : null;
   if (!session) throw new HttpError(401, 'Sesion requerida');
   const result = await pool.query(`
     SELECT id, tenant_id, store_id, name, username, email, role, active
@@ -309,6 +312,37 @@ async function getRequestContext(req) {
     throw new HttpError(401, 'Sesion invalida');
   }
   return { user: publicUser(user) };
+}
+
+async function saveSession(token, userId) {
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await pool.query(`
+    INSERT INTO cloud_sessions (token_hash, user_id, expires_at)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (token_hash) DO UPDATE SET user_id = EXCLUDED.user_id, expires_at = EXCLUDED.expires_at
+  `, [hashToken(token), userId, expiresAt]);
+}
+
+async function getStoredSession(token) {
+  const cached = sessions.get(token);
+  if (cached) return cached;
+  const result = await pool.query(`
+    DELETE FROM cloud_sessions WHERE expires_at < now()
+  `);
+  void result;
+  const session = await pool.query(`
+    SELECT user_id AS "userId", created_at AS "createdAt"
+    FROM cloud_sessions
+    WHERE token_hash = $1 AND expires_at >= now()
+  `, [hashToken(token)]);
+  const row = session.rows[0];
+  if (!row) return null;
+  sessions.set(token, row);
+  return row;
+}
+
+async function deleteSession(token) {
+  await pool.query('DELETE FROM cloud_sessions WHERE token_hash = $1', [hashToken(token)]);
 }
 
 function requireRole(ctx, roles) {
@@ -1109,6 +1143,10 @@ function roundMoney(value) {
 
 function randomToken() {
   return randomBytes(32).toString('hex');
+}
+
+function hashToken(token) {
+  return createHash('sha256').update(String(token || '')).digest('hex');
 }
 
 function cleanRequired(value, label) {
