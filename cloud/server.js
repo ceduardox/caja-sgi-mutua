@@ -181,14 +181,14 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && url.pathname === '/api/sales') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
     sendJson(res, 200, { sales: await listSales(ctx, url.searchParams.get('store_id')) });
     return;
   }
 
   const saleDetailMatch = url.pathname.match(/^\/api\/sales\/([^/]+)$/);
   if (saleDetailMatch && method === 'GET') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
     sendJson(res, 200, { sale: await getSaleDetails(ctx, saleDetailMatch[1]) });
     return;
   }
@@ -210,13 +210,13 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && url.pathname === '/api/summary') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
     sendJson(res, 200, await getSummary(ctx, url.searchParams.get('store_id')));
     return;
   }
 
   if (method === 'GET' && url.pathname === '/api/reports') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
     sendJson(res, 200, await getReports(ctx, url.searchParams));
     return;
   }
@@ -243,7 +243,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && url.pathname === '/api/sales') {
-    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
     const sale = await createOnlineSale(ctx, await readJson(req));
     sendJson(res, 201, { sale });
     return;

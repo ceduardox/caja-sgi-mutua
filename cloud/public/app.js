@@ -235,7 +235,10 @@ function bindEvents() {
 
 async function refreshAll() {
   if (canManageAdmin(state.user?.role)) await loadAdminData();
-  await Promise.all([loadProducts(), refreshSummary(), loadSales(), checkHealth(), loadReports()]);
+  const tasks = [loadProducts(), checkHealth()];
+  if (canSell(state.user?.role)) tasks.push(refreshSummary(), loadSales());
+  if (canViewReports(state.user?.role)) tasks.push(loadReports());
+  await Promise.all(tasks);
 }
 
 async function initializeSession() {
@@ -243,7 +246,7 @@ async function initializeSession() {
     const data = await api('/api/session');
     applySession(data.user, data.store);
     await refreshAll();
-    els.scanInput.focus();
+    focusDefaultView();
   } catch {
     els.loginOverlay.classList.add('active');
     renderIcons();
@@ -268,7 +271,7 @@ async function login(event) {
     setLoginMessage('', 'info');
     els.loginOverlay.classList.remove('active');
     await refreshAll();
-    els.scanInput.focus();
+    focusDefaultView();
   } catch (error) {
     setLoginMessage(error.message, 'error');
     showToast(error.message);
@@ -303,8 +306,9 @@ function applySession(user, store) {
     const allowed = canAccessView(user.role, view);
     tab.hidden = !allowed;
   });
-  if (!canAccessView(user.role, document.querySelector('.view.active')?.id || 'posView')) {
-    showView('posView');
+  const currentView = document.querySelector('.view.active')?.id || 'posView';
+  if (!canAccessView(user.role, currentView)) {
+    showView(defaultViewForRole(user.role));
   }
   renderIcons();
 }
@@ -558,7 +562,7 @@ async function saveUser(event) {
 function showView(viewId) {
   if (!canAccessView(state.user?.role, viewId)) {
     showToast('No tienes permiso para abrir este modulo');
-    viewId = 'posView';
+    viewId = defaultViewForRole(state.user?.role);
   }
   els.tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.view === viewId));
   els.views.forEach((view) => view.classList.toggle('active', view.id === viewId));
@@ -566,6 +570,7 @@ function showView(viewId) {
     document.querySelector('.tab[data-view="productsView"]')?.classList.remove('attention');
   }
   if (viewId === 'posView') els.scanInput.focus();
+  if (viewId === 'productsView') els.productSearchInput.focus();
   if (viewId === 'reportsView') {
     loadReports().then(() => window.setTimeout(resizeCharts, 80));
   }
@@ -1630,6 +1635,14 @@ function canAdjustSales(role) {
   return isGlobalAdmin(role) || role === 'branch_admin';
 }
 
+function canSell(role) {
+  return ['master_admin', 'tenant_owner', 'owner', 'branch_admin', 'cashier'].includes(role);
+}
+
+function canViewReports(role) {
+  return ['master_admin', 'tenant_owner', 'owner', 'branch_admin'].includes(role);
+}
+
 function canChangeUserPassword(user) {
   const role = state.user?.role;
   if (!user || !role) return false;
@@ -1644,12 +1657,24 @@ function canChangeUserPassword(user) {
 function canAccessView(role, viewId) {
   if (role === 'master_admin' && viewId === 'posView') return true;
   if (isGlobalAdmin(role) || role === 'branch_admin') return true;
-  if (role === 'editor') return viewId !== 'adminView';
+  if (role === 'editor') return viewId === 'productsView';
   return viewId === 'posView';
 }
 
 function isGlobalAdmin(role) {
   return ['owner', 'tenant_owner', 'master_admin'].includes(role);
+}
+
+function defaultViewForRole(role) {
+  return role === 'editor' ? 'productsView' : 'posView';
+}
+
+function focusDefaultView() {
+  if (state.user?.role === 'editor') {
+    showView('productsView');
+    return;
+  }
+  showView('posView');
 }
 
 function activeStoreId() {
