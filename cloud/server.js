@@ -12,6 +12,7 @@ const PUBLIC_DIR = join(ROOT, 'public');
 const SCHEMA_PATH = join(ROOT, 'postgres_schema.sql');
 const COOKIE_NAME = process.env.COOKIE_NAME || 'sgi_market_session';
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 7);
+const REMEMBER_SESSION_DAYS = Number(process.env.REMEMBER_SESSION_DAYS || 365);
 const sessions = new Map();
 
 if (!process.env.DATABASE_URL) {
@@ -77,8 +78,9 @@ async function handleApi(req, res, url) {
     const user = await loginUser(body.username, body.password);
     const token = randomToken();
     sessions.set(token, { userId: user.id, createdAt: Date.now() });
-    await saveSession(token, user.id);
-    setSessionCookie(res, token);
+    const sessionDays = body.remember === false ? SESSION_DAYS : REMEMBER_SESSION_DAYS;
+    await saveSession(token, user.id, sessionDays);
+    setSessionCookie(res, token, sessionDays);
     sendJson(res, 200, { user });
     return;
   }
@@ -314,8 +316,8 @@ async function getRequestContext(req) {
   return { user: publicUser(user) };
 }
 
-async function saveSession(token, userId) {
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+async function saveSession(token, userId, days = SESSION_DAYS) {
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   await pool.query(`
     INSERT INTO cloud_sessions (token_hash, user_id, expires_at)
     VALUES ($1, $2, $3)
@@ -1035,9 +1037,10 @@ function sendText(res, status, body) {
   res.end(body);
 }
 
-function setSessionCookie(res, token) {
+function setSessionCookie(res, token, days = SESSION_DAYS) {
   const secure = String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure}`);
+  const maxAge = Math.max(60, Math.round(days * 24 * 60 * 60));
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
 }
 
 function clearSessionCookie(res) {

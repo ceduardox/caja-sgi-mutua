@@ -250,19 +250,35 @@
     </main>
 
     <div id="loginOverlay" class="login-overlay">
-      <form id="loginForm" class="login-card">
-        <div class="brand login-brand">
-          <div class="brand-mark image-mark"><img src="/assets/favicon.png" alt=""></div>
-          <div>
-            <p class="eyebrow">Sistema de ventas</p>
-            <h2>SGI Market Caja</h2>
-          </div>
+      <div class="login-hero-brand">
+        <div class="brand-mark image-mark"><img src="/assets/favicon.png" alt=""></div>
+        <div>
+          <p class="eyebrow">Panel central</p>
+          <h1>SGI Market Caja</h1>
         </div>
-        <label>Usuario<input id="loginUsername" autocomplete="username" value="admin"></label>
-        <label>Contrasena<input id="loginPassword" type="password" autocomplete="current-password"></label>
+      </div>
+      <form id="loginForm" class="login-card">
+        <div class="login-lock"><i data-lucide="lock-keyhole"></i></div>
+        <div class="login-heading">
+          <p class="eyebrow">Acceso seguro</p>
+          <h2>Ingresar</h2>
+        </div>
+        <label>Usuario
+          <span class="login-input">
+            <i data-lucide="user"></i>
+            <input id="loginUsername" autocomplete="username" value="admin">
+          </span>
+        </label>
+        <label>Contrasena
+          <span class="login-input">
+            <i data-lucide="lock"></i>
+            <input id="loginPassword" type="password" autocomplete="current-password">
+            <button id="toggleLoginPassword" class="password-toggle" type="button" aria-label="Mostrar contrasena"><i data-lucide="eye"></i></button>
+          </span>
+        </label>
+        <label class="remember-row"><input id="rememberSession" type="checkbox" checked> Mantener sesion iniciada</label>
         <button class="primary" type="submit"><i data-lucide="log-in"></i>Ingresar</button>
         <div id="loginMessage" class="login-message" hidden></div>
-        <p class="login-note">Ingresa con el usuario asignado por el administrador.</p>
       </form>
     </div>
 

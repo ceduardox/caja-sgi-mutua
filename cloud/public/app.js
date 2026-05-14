@@ -32,6 +32,8 @@ const els = {
   loginForm: document.querySelector('#loginForm'),
   loginUsername: document.querySelector('#loginUsername'),
   loginPassword: document.querySelector('#loginPassword'),
+  toggleLoginPassword: document.querySelector('#toggleLoginPassword'),
+  rememberSession: document.querySelector('#rememberSession'),
   loginMessage: document.querySelector('#loginMessage'),
   storeForm: document.querySelector('#storeForm'),
   storeName: document.querySelector('#storeName'),
@@ -137,6 +139,7 @@ function bindEvents() {
     tab.addEventListener('click', () => showView(tab.dataset.view));
   });
   els.loginForm.addEventListener('submit', login);
+  els.toggleLoginPassword.addEventListener('click', toggleLoginPassword);
   els.storeForm.addEventListener('submit', saveStore);
   els.storesList.addEventListener('click', handleStoreListClick);
   els.userForm.addEventListener('submit', saveUser);
@@ -242,7 +245,8 @@ async function login(event) {
       method: 'POST',
       body: JSON.stringify({
         username: els.loginUsername.value,
-        password: els.loginPassword.value
+        password: els.loginPassword.value,
+        remember: els.rememberSession.checked
       })
     });
     applySession(data.user, data.store);
@@ -256,6 +260,15 @@ async function login(event) {
   } finally {
     submitButton.disabled = false;
   }
+}
+
+function toggleLoginPassword() {
+  const visible = els.loginPassword.type === 'text';
+  els.loginPassword.type = visible ? 'password' : 'text';
+  els.toggleLoginPassword.setAttribute('aria-label', visible ? 'Mostrar contrasena' : 'Ocultar contrasena');
+  els.toggleLoginPassword.innerHTML = `<i data-lucide="${visible ? 'eye' : 'eye-off'}"></i>`;
+  renderIcons();
+  els.loginPassword.focus();
 }
 
 function applySession(user, store) {

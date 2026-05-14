@@ -1102,10 +1102,56 @@ select {
   z-index: 40;
   display: none;
   place-items: center;
-  padding: 20px;
+  padding: 150px 20px 36px;
   background:
-    radial-gradient(circle at 20% 0%, rgba(0, 217, 197, 0.16), transparent 30%),
-    linear-gradient(135deg, #061226, #07182f 58%, #071a33);
+    radial-gradient(circle at 4% 72%, rgba(0, 91, 187, 0.10), transparent 24%),
+    radial-gradient(circle at 96% 84%, rgba(0, 217, 197, 0.10), transparent 18%),
+    linear-gradient(135deg, rgba(255,255,255,0.96), rgba(246,249,253,0.96));
+  overflow: auto;
+}
+
+.login-overlay::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: 142px;
+  background:
+    radial-gradient(circle at 88% -20%, rgba(0, 132, 255, 0.26), transparent 38%),
+    linear-gradient(135deg, #061226, #0b2143 62%, #10396f);
+  pointer-events: none;
+}
+
+.login-overlay::after {
+  content: "";
+  position: fixed;
+  inset: 142px 0 0;
+  background:
+    linear-gradient(135deg, transparent 0 58%, rgba(10, 40, 82, 0.035) 58% 72%, transparent 72%),
+    radial-gradient(circle at 2% 12%, rgba(20, 102, 195, 0.09) 0 2px, transparent 3px);
+  background-size: auto, 22px 22px;
+  pointer-events: none;
+}
+
+.login-hero-brand {
+  position: fixed;
+  top: 28px;
+  left: 34px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #fff;
+}
+
+.login-hero-brand .brand-mark {
+  width: 56px;
+  height: 56px;
+}
+
+.login-hero-brand h1 {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 42px);
+  letter-spacing: 0;
 }
 
 .login-overlay.active {
@@ -1113,25 +1159,106 @@ select {
 }
 
 .login-card {
-  width: min(420px, 100%);
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
   display: grid;
-  gap: 14px;
-  padding: 28px;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 18px;
+  gap: 18px;
+  padding: 38px;
+  border: 12px solid rgba(232, 250, 250, 0.78);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 42, 84, 0.16), 0 0 34px rgba(0, 217, 197, 0.20);
+  backdrop-filter: blur(10px);
+}
+
+.login-lock {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 137, 125, 0.18);
   background: #fff;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  color: var(--primary);
+  box-shadow: 0 12px 28px rgba(0, 137, 125, 0.18);
 }
 
-.login-brand {
-  min-width: 0;
-  margin-bottom: 8px;
-  color: var(--ink);
+.login-lock svg {
+  width: 34px;
+  height: 34px;
 }
 
-.login-brand h2 {
+.login-heading {
+  text-align: center;
+}
+
+.login-heading h2 {
   margin: 0;
-  font-size: 26px;
+  font-size: clamp(34px, 5vw, 48px);
+}
+
+.login-heading::after {
+  content: "";
+  display: block;
+  width: 68px;
+  height: 3px;
+  margin: 18px auto 0;
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+}
+
+.login-input {
+  min-height: 60px;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 14px;
+  background: #fff;
+}
+
+.login-input:focus-within {
+  border-color: rgba(0, 137, 125, 0.55);
+  box-shadow: 0 0 0 4px rgba(0, 137, 125, 0.10);
+}
+
+.login-input input {
+  min-height: 58px;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.login-input input:focus {
+  outline: 0;
+}
+
+.password-toggle {
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.remember-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.remember-row input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--primary);
 }
 
 .login-note {
@@ -1156,6 +1283,22 @@ select {
   border-color: #f4b8b2;
   background: #fff1f0;
   color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .login-overlay {
+    padding-top: 128px;
+  }
+
+  .login-hero-brand {
+    left: 20px;
+    top: 24px;
+  }
+
+  .login-card {
+    padding: 28px 22px;
+    border-width: 8px;
+  }
 }
 
 .table-row {
