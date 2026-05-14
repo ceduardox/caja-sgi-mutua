@@ -91,6 +91,11 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === 'POST' && url.pathname === '/api/bootstrap/login') {
+    await handleBootstrapLogin(req, res);
+    return;
+  }
+
   const ctx = await getRequestContext(req);
 
   if (method === 'GET' && url.pathname === '/api/session') {
@@ -177,6 +182,33 @@ async function loginUser(username, password) {
     throw new HttpError(401, 'Usuario o contrasena incorrectos');
   }
   return publicUser(user);
+}
+
+async function handleBootstrapLogin(req, res) {
+  const body = await readJson(req);
+  const user = await loginUser(body.username, body.password);
+  if (user.role === 'master_admin') throw new HttpError(403, 'El admin maestro no instala cajas locales');
+  const stores = await getBootstrapStores(user);
+  if (stores.length === 0) throw new HttpError(403, 'El usuario no tiene sucursal asignada');
+  sendJson(res, 200, { user, stores });
+}
+
+async function getBootstrapStores(user) {
+  if (user.role === 'tenant_owner') {
+    const result = await pool.query(`
+      SELECT id, tenant_id, name, address, active
+      FROM stores
+      WHERE tenant_id = $1 AND active = TRUE
+      ORDER BY name ASC
+    `, [user.tenant_id]);
+    return result.rows;
+  }
+  const result = await pool.query(`
+    SELECT id, tenant_id, name, address, active
+    FROM stores
+    WHERE id = $1 AND active = TRUE
+  `, [user.store_id]);
+  return result.rows;
 }
 
 async function getRequestContext(req) {

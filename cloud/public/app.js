@@ -31,6 +31,7 @@ const els = {
   userEmail: document.querySelector('#userEmail'),
   userPassword: document.querySelector('#userPassword'),
   userTenant: document.querySelector('#userTenant'),
+  userStoreLabel: document.querySelector('#userStoreLabel'),
   userStore: document.querySelector('#userStore'),
   userRole: document.querySelector('#userRole'),
   tenantsList: document.querySelector('#tenantsList'),
@@ -49,6 +50,7 @@ function boot() {
   els.storeForm.addEventListener('submit', saveStore);
   els.userForm.addEventListener('submit', saveUser);
   els.userTenant.addEventListener('change', renderStoreOptions);
+  els.userRole.addEventListener('change', updateUserStoreVisibility);
   initializeSession();
 }
 
@@ -140,6 +142,13 @@ function renderRoleOptions() {
       ? [['branch_admin', 'Admin sucursal'], ['editor', 'Editor'], ['cashier', 'Cajera']]
       : [['editor', 'Editor'], ['cashier', 'Cajera']];
   els.userRole.innerHTML = roles.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+  updateUserStoreVisibility();
+}
+
+function updateUserStoreVisibility() {
+  const tenantOwner = els.userRole.value === 'tenant_owner';
+  els.userStoreLabel.hidden = tenantOwner;
+  els.userStore.disabled = tenantOwner;
 }
 
 function renderLists() {

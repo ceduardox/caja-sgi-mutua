@@ -4,11 +4,14 @@ const { join, extname } = require('node:path');
 const { randomUUID, randomBytes, scryptSync, timingSafeEqual } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
+loadEnv();
+
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const PUBLIC_DIR = join(ROOT, 'public');
 const DATA_DIR = process.env.SGI_DATA_DIR || join(ROOT, 'data');
 const DB_PATH = join(DATA_DIR, 'sgi-market-caja.sqlite');
+const CLOUD_PUBLIC_URL = String(process.env.CLOUD_PUBLIC_URL || '').replace(/\/+$/, '');
 const DEFAULT_STORE_ID = 'local-store';
 const DEVICE_ID = 'local-device';
 const DEFAULT_USER_ID = 'admin-local';
@@ -292,7 +295,7 @@ async function handleApi(req, res, url) {
 
   if (method === 'POST' && url.pathname === '/api/login') {
     const body = await readJson(req);
-    const user = loginUser(body.username, body.password);
+    const user = await loginUserWithCloudFallback(body.username, body.password);
     const token = randomUUID();
     sessions.set(token, { userId: user.id, activeStoreId: user.store_id || DEFAULT_STORE_ID, createdAt: Date.now() });
     res.setHeader('Set-Cookie', `sgi_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
@@ -970,6 +973,99 @@ function loginUser(username, password) {
   return publicUser(user);
 }
 
+async function loginUserWithCloudFallback(username, password) {
+  try {
+    return loginUser(username, password);
+  } catch (localError) {
+    if (!CLOUD_PUBLIC_URL || !String(username || '').trim() || !String(password || '').trim()) {
+      throw localError;
+    }
+    try {
+      await importCloudLogin(username, password);
+      return loginUser(username, password);
+    } catch (cloudError) {
+      const error = new Error(cloudError.message || localError.message || 'Usuario o contrasena incorrectos');
+      error.status = cloudError.status || 401;
+      throw error;
+    }
+  }
+}
+
+async function importCloudLogin(username, password) {
+  const response = await fetch(`${CLOUD_PUBLIC_URL}/api/bootstrap/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || 'No se pudo iniciar sesion con la nube');
+    error.status = response.status;
+    throw error;
+  }
+  const user = data.user;
+  const stores = Array.isArray(data.stores) ? data.stores : [];
+  if (!user || stores.length === 0) throw new Error('La nube no devolvio datos de sucursal');
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const store of stores) {
+      upsertCloudStore(store);
+    }
+    upsertCloudUser(user, stores[0], password);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function upsertCloudStore(store) {
+  const id = String(store.id || '').trim();
+  const name = String(store.name || '').trim();
+  if (!id || !name) throw new Error('Sucursal cloud invalida');
+  db.prepare(`
+    INSERT INTO stores (id, name, license_status)
+    VALUES (?, ?, 'active')
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      license_status = 'active',
+      updated_at = CURRENT_TIMESTAMP
+  `).run(id, name);
+  db.prepare(`
+    INSERT OR IGNORE INTO categories (id, store_id, name)
+    VALUES (?, ?, 'General')
+  `).run(`cat-${id}`, id);
+}
+
+function upsertCloudUser(user, defaultStore, password) {
+  const username = String(user.username || '').trim();
+  const name = String(user.name || username).trim();
+  const role = mapCloudRole(user.role);
+  const storeId = role === 'owner' ? null : String(user.store_id || defaultStore.id || '').trim();
+  if (!username) throw new Error('Usuario cloud invalido');
+  if (role !== 'owner' && !storeId) throw new Error('El usuario no tiene sucursal');
+  db.prepare(`
+    INSERT INTO users (id, store_id, name, username, password_hash, role, active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(username) DO UPDATE SET
+      store_id = excluded.store_id,
+      name = excluded.name,
+      password_hash = excluded.password_hash,
+      role = excluded.role,
+      active = 1,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(user.id || randomUUID(), storeId, name, username, hashPassword(password), role);
+}
+
+function mapCloudRole(role) {
+  if (role === 'tenant_owner') return 'owner';
+  if (role === 'branch_admin') return 'branch_admin';
+  if (role === 'editor') return 'editor';
+  if (role === 'cashier') return 'cashier';
+  throw new Error('Rol cloud no permitido en caja local');
+}
+
 function getRequestContext(req) {
   const token = getSessionToken(req);
   const session = token ? sessions.get(token) : null;
@@ -1139,6 +1235,22 @@ function getSessionToken(req) {
   const cookie = req.headers.cookie || '';
   const match = cookie.match(/(?:^|;\s*)sgi_session=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function loadEnv() {
+  const envPath = join(__dirname, '..', '.env');
+  if (!existsSync(envPath)) return;
+  for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const clean = line.trim();
+    if (!clean || clean.startsWith('#') || !clean.includes('=')) continue;
+    const index = clean.indexOf('=');
+    const key = clean.slice(0, index).trim();
+    let value = clean.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
 }
 
 function hashPassword(password) {
