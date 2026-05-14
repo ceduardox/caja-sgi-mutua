@@ -1,7 +1,7 @@
 const { createServer } = require('node:http');
 const { readFileSync, existsSync, mkdirSync } = require('node:fs');
 const { join, extname } = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, randomBytes, scryptSync, timingSafeEqual } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 const PORT = Number(process.env.PORT || 4173);
@@ -9,9 +9,10 @@ const ROOT = __dirname;
 const PUBLIC_DIR = join(ROOT, 'public');
 const DATA_DIR = join(ROOT, 'data');
 const DB_PATH = join(DATA_DIR, 'sgi-market-caja.sqlite');
-const STORE_ID = 'local-store';
+const DEFAULT_STORE_ID = 'local-store';
 const DEVICE_ID = 'local-device';
-const USER_ID = 'admin-local';
+const DEFAULT_USER_ID = 'admin-local';
+const sessions = new Map();
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
@@ -43,7 +44,7 @@ const server = createServer(async (req, res) => {
 
     serveStatic(res, url.pathname);
   } catch (error) {
-    sendJson(res, 500, { error: error.message || 'Error interno' });
+    sendJson(res, error.status || 500, { error: error.message || 'Error interno' });
   }
 });
 
@@ -56,24 +57,29 @@ function seedLocalData() {
   db.prepare(`
     INSERT OR IGNORE INTO stores (id, name, license_status)
     VALUES (?, ?, ?)
-  `).run(STORE_ID, 'Mutualista', 'trial');
+  `).run(DEFAULT_STORE_ID, 'Mutualista', 'trial');
 
   db.prepare(`
     INSERT OR IGNORE INTO devices (id, store_id, name)
     VALUES (?, ?, ?)
-  `).run(DEVICE_ID, STORE_ID, 'Caja principal');
+  `).run(DEVICE_ID, DEFAULT_STORE_ID, 'Caja principal');
 
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, store_id, name, username, password_hash, role)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(USER_ID, STORE_ID, 'Administrador', 'admin', 'local-demo', 'admin');
+  const existingAdmin = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get('admin');
+  if (!existingAdmin) {
+    db.prepare(`
+      INSERT INTO users (id, store_id, name, username, password_hash, role)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(DEFAULT_USER_ID, DEFAULT_STORE_ID, 'Administrador', 'admin', hashPassword('admin123'), 'admin');
+  } else if (existingAdmin.password_hash === 'local-demo') {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword('admin123'), existingAdmin.id);
+  }
 
   db.prepare(`
     INSERT OR IGNORE INTO categories (id, store_id, name)
     VALUES (?, ?, ?)
-  `).run('cat-general', STORE_ID, 'General');
+  `).run('cat-general', DEFAULT_STORE_ID, 'General');
 
-  const count = db.prepare('SELECT COUNT(*) AS count FROM products WHERE store_id = ?').get(STORE_ID).count;
+  const count = db.prepare('SELECT COUNT(*) AS count FROM products WHERE store_id = ?').get(DEFAULT_STORE_ID).count;
   if (count === 0) {
     const insert = db.prepare(`
       INSERT INTO products (
@@ -81,9 +87,9 @@ function seedLocalData() {
         stock, min_stock, active
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `);
-    insert.run(randomUUID(), STORE_ID, 'cat-general', '7750001000012', 'PROD-001', 'Agua mineral 600 ml', 2.5, 5, 24, 5);
-    insert.run(randomUUID(), STORE_ID, 'cat-general', '7750001000029', 'PROD-002', 'Galletas vainilla', 3, 6, 18, 6);
-    insert.run(randomUUID(), STORE_ID, 'cat-general', '7750001000036', 'PROD-003', 'Jugo personal', 4, 8, 12, 4);
+    insert.run(randomUUID(), DEFAULT_STORE_ID, 'cat-general', '7750001000012', 'PROD-001', 'Agua mineral 600 ml', 2.5, 5, 24, 5);
+    insert.run(randomUUID(), DEFAULT_STORE_ID, 'cat-general', '7750001000029', 'PROD-002', 'Galletas vainilla', 3, 6, 18, 6);
+    insert.run(randomUUID(), DEFAULT_STORE_ID, 'cat-general', '7750001000036', 'PROD-003', 'Jugo personal', 4, 8, 12, 4);
   }
 }
 
@@ -92,6 +98,33 @@ function migrateLocalDatabase() {
   if (!columns.includes('cash_received')) db.exec('ALTER TABLE sales ADD COLUMN cash_received REAL');
   if (!columns.includes('cash_change')) db.exec('ALTER TABLE sales ADD COLUMN cash_change REAL');
   if (!columns.includes('qr_transaction_code')) db.exec('ALTER TABLE sales ADD COLUMN qr_transaction_code TEXT');
+  const usersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
+  if (usersSql && !usersSql.includes("'editor'")) {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('ALTER TABLE users RENAME TO users_old_role');
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        username TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('admin', 'editor', 'cashier')),
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (store_id, username),
+        FOREIGN KEY (store_id) REFERENCES stores(id)
+      )
+    `);
+    db.exec(`
+      INSERT INTO users (id, store_id, name, username, password_hash, role, active, created_at, updated_at)
+      SELECT id, store_id, name, username, password_hash, role, active, created_at, updated_at
+      FROM users_old_role
+    `);
+    db.exec('DROP TABLE users_old_role');
+    db.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 async function handleApi(req, res, url) {
@@ -101,64 +134,117 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, {
       ok: true,
       mode: 'local',
-      storeId: STORE_ID,
+      storeId: DEFAULT_STORE_ID,
       deviceId: DEVICE_ID,
       now: new Date().toISOString()
     });
     return;
   }
 
+  if (method === 'POST' && url.pathname === '/api/login') {
+    const body = await readJson(req);
+    const user = loginUser(body.username, body.password);
+    const token = randomUUID();
+    sessions.set(token, { userId: user.id, storeId: user.store_id, createdAt: Date.now() });
+    res.setHeader('Set-Cookie', `sgi_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
+    sendJson(res, 200, { user });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/logout') {
+    const token = getSessionToken(req);
+    if (token) sessions.delete(token);
+    res.setHeader('Set-Cookie', 'sgi_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  const ctx = getRequestContext(req);
+
+  if (method === 'GET' && url.pathname === '/api/session') {
+    sendJson(res, 200, { user: ctx.user, store: ctx.store });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/stores') {
+    requireRole(ctx, ['admin', 'editor']);
+    sendJson(res, 200, { stores: listStores() });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/stores') {
+    requireRole(ctx, ['admin', 'editor']);
+    const store = createStore(await readJson(req));
+    sendJson(res, 201, { store });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/users') {
+    requireRole(ctx, ['admin']);
+    sendJson(res, 200, { users: listUsers() });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/users') {
+    requireRole(ctx, ['admin']);
+    const user = createUser(await readJson(req));
+    sendJson(res, 201, { user });
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/products') {
     const q = (url.searchParams.get('q') || '').trim();
-    const products = listProducts(q);
+    const products = listProducts(ctx, q);
     sendJson(res, 200, { products });
     return;
   }
 
   if (method === 'POST' && url.pathname === '/api/products') {
+    requireRole(ctx, ['admin']);
     const body = await readJson(req);
-    const product = createProduct(body);
-    enqueueSync('product', product.id, 'create', product);
+    const product = createProduct(ctx, body);
+    enqueueSync(ctx, 'product', product.id, 'create', product);
     sendJson(res, 201, { product });
     return;
   }
 
   const productMatch = url.pathname.match(/^\/api\/products\/([^/]+)$/);
   if (productMatch && method === 'PUT') {
+    requireRole(ctx, ['admin']);
     const body = await readJson(req);
-    const product = updateProduct(productMatch[1], body);
-    enqueueSync('product', product.id, 'update', product);
+    const product = updateProduct(ctx, productMatch[1], body);
+    enqueueSync(ctx, 'product', product.id, 'update', product);
     sendJson(res, 200, { product });
     return;
   }
 
   if (method === 'POST' && url.pathname === '/api/sales') {
     const body = await readJson(req);
-    const sale = createSale(body);
-    enqueueSync('sale', sale.id, 'create', sale);
+    const sale = createSale(ctx, body);
+    enqueueSync(ctx, 'sale', sale.id, 'create', sale);
     sendJson(res, 201, { sale });
     return;
   }
 
   if (method === 'GET' && url.pathname === '/api/sales') {
-    sendJson(res, 200, { sales: listSales() });
+    sendJson(res, 200, { sales: listSales(ctx) });
     return;
   }
 
   if (method === 'GET' && url.pathname === '/api/summary') {
-    sendJson(res, 200, getSummary());
+    sendJson(res, 200, getSummary(ctx));
     return;
   }
 
   if (method === 'GET' && url.pathname === '/api/reports') {
-    sendJson(res, 200, getReports(url.searchParams));
+    sendJson(res, 200, getReports(ctx, url.searchParams));
     return;
   }
 
   sendJson(res, 404, { error: 'Ruta no encontrada' });
 }
 
-function listProducts(q = '') {
+function listProducts(ctx, q = '') {
   if (!q) {
     return db.prepare(`
       SELECT id, barcode, sku, name, cost_price, sale_price, stock, min_stock, image_path, active, updated_at
@@ -166,7 +252,7 @@ function listProducts(q = '') {
       WHERE store_id = ?
       ORDER BY active DESC, name ASC
       LIMIT 500
-    `).all(STORE_ID);
+    `).all(ctx.storeId);
   }
 
   const needle = `%${q}%`;
@@ -177,10 +263,10 @@ function listProducts(q = '') {
       AND (name LIKE ? OR barcode LIKE ? OR sku LIKE ?)
     ORDER BY active DESC, name ASC
     LIMIT 100
-  `).all(STORE_ID, needle, needle, needle);
+  `).all(ctx.storeId, needle, needle, needle);
 }
 
-function createProduct(input) {
+function createProduct(ctx, input) {
   const product = normalizeProduct(input);
   product.id = randomUUID();
 
@@ -191,7 +277,7 @@ function createProduct(input) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     product.id,
-    STORE_ID,
+    ctx.storeId,
     'cat-general',
     product.barcode,
     product.sku,
@@ -205,11 +291,11 @@ function createProduct(input) {
     product.active
   );
 
-  return getProduct(product.id);
+  return getProduct(ctx, product.id);
 }
 
-function updateProduct(id, input) {
-  const current = getProduct(id);
+function updateProduct(ctx, id, input) {
+  const current = getProduct(ctx, id);
   if (!current) throw new Error('Producto no encontrado');
 
   const product = normalizeProduct({ ...current, ...input });
@@ -230,10 +316,10 @@ function updateProduct(id, input) {
     product.image_path,
     product.active,
     id,
-    STORE_ID
+    ctx.storeId
   );
 
-  return getProduct(id);
+  return getProduct(ctx, id);
 }
 
 function normalizeProduct(input) {
@@ -260,19 +346,19 @@ function normalizeProduct(input) {
   };
 }
 
-function getProduct(id) {
+function getProduct(ctx, id) {
   return db.prepare(`
     SELECT id, barcode, sku, name, description, cost_price, sale_price, stock, min_stock, image_path, active, updated_at
     FROM products
     WHERE id = ? AND store_id = ?
-  `).get(id, STORE_ID);
+  `).get(id, ctx.storeId);
 }
 
-function createSale(input) {
+function createSale(ctx, input) {
   const items = Array.isArray(input.items) ? input.items : [];
   if (items.length === 0) throw new Error('La venta no tiene productos');
 
-  const openSession = ensureCashSession();
+  const openSession = ensureCashSession(ctx);
   const saleId = randomUUID();
   const now = new Date().toISOString();
   const paymentMethod = normalizePaymentMethod(input.payment_method ?? input.paymentMethod);
@@ -287,7 +373,7 @@ function createSale(input) {
         SELECT id, barcode, name, cost_price, sale_price, stock
         FROM products
         WHERE id = ? AND store_id = ? AND active = 1
-      `).get(item.product_id ?? item.productId, STORE_ID);
+      `).get(item.product_id ?? item.productId, ctx.storeId);
 
       if (!product) throw new Error('Producto no encontrado o inactivo');
 
@@ -312,10 +398,10 @@ function createSale(input) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
     `).run(
       saleId,
-      STORE_ID,
+      ctx.storeId,
       DEVICE_ID,
       openSession.id,
-      USER_ID,
+      ctx.user.id,
       normalizeMoney(subtotal),
       total,
       paymentMethod,
@@ -354,51 +440,51 @@ function createSale(input) {
         item.unitPrice,
         item.lineTotal
       );
-      updateStock.run(item.quantity, item.product.id, STORE_ID);
+      updateStock.run(item.quantity, item.product.id, ctx.storeId);
       insertMovement.run(
         randomUUID(),
-        STORE_ID,
+        ctx.storeId,
         item.product.id,
         -item.quantity,
         item.product.stock,
         newStock,
         'Venta local',
         saleId,
-        USER_ID
+        ctx.user.id
       );
     }
 
     db.exec('COMMIT');
-    return getSale(saleId);
+    return getSale(ctx, saleId);
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
   }
 }
 
-function ensureCashSession() {
+function ensureCashSession(ctx) {
   const open = db.prepare(`
     SELECT id FROM cash_sessions
     WHERE store_id = ? AND device_id = ? AND status = 'open'
     ORDER BY opened_at DESC
     LIMIT 1
-  `).get(STORE_ID, DEVICE_ID);
+  `).get(ctx.storeId, DEVICE_ID);
   if (open) return open;
 
   const id = randomUUID();
   db.prepare(`
     INSERT INTO cash_sessions (id, store_id, device_id, opened_by, opening_amount, status)
     VALUES (?, ?, ?, ?, 0, 'open')
-  `).run(id, STORE_ID, DEVICE_ID, USER_ID);
+  `).run(id, ctx.storeId, DEVICE_ID, ctx.user.id);
   return { id };
 }
 
-function getSale(id) {
+function getSale(ctx, id) {
   const sale = db.prepare(`
     SELECT id, subtotal, discount_total, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
     FROM sales
     WHERE id = ? AND store_id = ?
-  `).get(id, STORE_ID);
+  `).get(id, ctx.storeId);
   if (!sale) return null;
 
   sale.items = db.prepare(`
@@ -411,33 +497,33 @@ function getSale(id) {
   return sale;
 }
 
-function listSales() {
+function listSales(ctx) {
   return db.prepare(`
     SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
     FROM sales
     WHERE store_id = ?
     ORDER BY created_at DESC
     LIMIT 50
-  `).all(STORE_ID);
+  `).all(ctx.storeId);
 }
 
-function getSummary() {
+function getSummary(ctx) {
   const today = new Date().toISOString().slice(0, 10);
   const sales = db.prepare(`
     SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
     FROM sales
     WHERE store_id = ? AND status = 'completed' AND substr(created_at, 1, 10) = ?
-  `).get(STORE_ID, today);
+  `).get(ctx.storeId, today);
   const lowStock = db.prepare(`
     SELECT COUNT(*) AS count
     FROM products
     WHERE store_id = ? AND active = 1 AND stock <= min_stock
-  `).get(STORE_ID);
+  `).get(ctx.storeId);
   const pendingSync = db.prepare(`
     SELECT COUNT(*) AS count
     FROM sync_queue
     WHERE store_id = ? AND status IN ('pending', 'failed', 'conflict')
-  `).get(STORE_ID);
+  `).get(ctx.storeId);
 
   return {
     today,
@@ -448,7 +534,7 @@ function getSummary() {
   };
 }
 
-function getReports(params) {
+function getReports(ctx, params) {
   const today = new Date().toISOString().slice(0, 10);
   const from = cleanDate(params.get('from')) || today;
   const to = cleanDate(params.get('to')) || today;
@@ -467,7 +553,7 @@ function getReports(params) {
     WHERE s.store_id = ?
       AND s.status = 'completed'
       AND s.created_at BETWEEN ? AND ?
-  `).get(STORE_ID, fromStamp, toStamp);
+  `).get(ctx.storeId, fromStamp, toStamp);
 
   const byDay = db.prepare(`
     SELECT substr(s.created_at, 1, 10) AS day, COUNT(*) AS sales_count, COALESCE(SUM(s.total), 0) AS total
@@ -475,7 +561,7 @@ function getReports(params) {
     WHERE s.store_id = ? AND s.status = 'completed' AND s.created_at BETWEEN ? AND ?
     GROUP BY substr(s.created_at, 1, 10)
     ORDER BY day ASC
-  `).all(STORE_ID, fromStamp, toStamp);
+  `).all(ctx.storeId, fromStamp, toStamp);
 
   const bestSellers = db.prepare(`
     SELECT
@@ -491,7 +577,7 @@ function getReports(params) {
     GROUP BY si.product_id, si.product_name
     ORDER BY quantity DESC, total DESC
     LIMIT 10
-  `).all(STORE_ID, fromStamp, toStamp);
+  `).all(ctx.storeId, fromStamp, toStamp);
 
   const lowStock = db.prepare(`
     SELECT id, name, barcode, sku, stock, min_stock, sale_price, image_path
@@ -499,7 +585,7 @@ function getReports(params) {
     WHERE store_id = ? AND active = 1 AND stock <= min_stock
     ORDER BY stock ASC, name ASC
     LIMIT 50
-  `).all(STORE_ID);
+  `).all(ctx.storeId);
 
   const paymentMethods = db.prepare(`
     SELECT payment_method, COUNT(*) AS sales_count, COALESCE(SUM(total), 0) AS total
@@ -507,7 +593,7 @@ function getReports(params) {
     WHERE store_id = ? AND status = 'completed' AND created_at BETWEEN ? AND ?
     GROUP BY payment_method
     ORDER BY total DESC
-  `).all(STORE_ID, fromStamp, toStamp);
+  `).all(ctx.storeId, fromStamp, toStamp);
 
   const sales = db.prepare(`
     SELECT id, total, payment_method, cash_received, cash_change, qr_transaction_code, status, created_at
@@ -515,7 +601,7 @@ function getReports(params) {
     WHERE store_id = ? AND created_at BETWEEN ? AND ?
     ORDER BY created_at DESC
     LIMIT 100
-  `).all(STORE_ID, fromStamp, toStamp);
+  `).all(ctx.storeId, fromStamp, toStamp);
 
   return {
     from,
@@ -539,12 +625,145 @@ function getReports(params) {
   };
 }
 
-function enqueueSync(entityType, entityId, action, payload) {
+function enqueueSync(ctx, entityType, entityId, action, payload) {
   db.prepare(`
     INSERT INTO sync_queue (
       id, store_id, device_id, entity_type, entity_id, action, payload_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(randomUUID(), STORE_ID, DEVICE_ID, entityType, entityId, action, JSON.stringify(payload));
+  `).run(randomUUID(), ctx.storeId, DEVICE_ID, entityType, entityId, action, JSON.stringify(payload));
+}
+
+function loginUser(username, password) {
+  const cleanUsername = String(username || '').trim();
+  const user = db.prepare(`
+    SELECT u.id, u.store_id, u.name, u.username, u.password_hash, u.role, u.active, s.name AS store_name
+    FROM users u
+    JOIN stores s ON s.id = u.store_id
+    WHERE u.username = ?
+  `).get(cleanUsername);
+  if (!user || !user.active || !verifyPassword(password, user.password_hash)) {
+    throw new Error('Usuario o contrasena incorrectos');
+  }
+  return publicUser(user);
+}
+
+function getRequestContext(req) {
+  const token = getSessionToken(req);
+  const session = token ? sessions.get(token) : null;
+  if (!session) {
+    const error = new Error('Sesion requerida');
+    error.status = 401;
+    throw error;
+  }
+  const user = db.prepare(`
+    SELECT u.id, u.store_id, u.name, u.username, u.role, u.active, s.name AS store_name
+    FROM users u
+    JOIN stores s ON s.id = u.store_id
+    WHERE u.id = ?
+  `).get(session.userId);
+  if (!user || !user.active) {
+    sessions.delete(token);
+    const error = new Error('Sesion invalida');
+    error.status = 401;
+    throw error;
+  }
+  return {
+    user: publicUser(user),
+    storeId: user.store_id,
+    store: { id: user.store_id, name: user.store_name }
+  };
+}
+
+function requireRole(ctx, roles) {
+  if (!roles.includes(ctx.user.role)) {
+    const error = new Error('No tienes permiso para esta accion');
+    error.status = 403;
+    throw error;
+  }
+}
+
+function listStores() {
+  return db.prepare(`
+    SELECT id, name, license_status, grace_until, created_at, updated_at
+    FROM stores
+    ORDER BY name ASC
+  `).all();
+}
+
+function createStore(input) {
+  const name = String(input.name || '').trim();
+  if (!name) throw new Error('El nombre de la sucursal es obligatorio');
+  const id = randomUUID();
+  db.prepare(`
+    INSERT INTO stores (id, name, license_status)
+    VALUES (?, ?, 'trial')
+  `).run(id, name);
+  db.prepare(`
+    INSERT INTO categories (id, store_id, name)
+    VALUES (?, ?, ?)
+  `).run(randomUUID(), id, 'General');
+  return db.prepare('SELECT id, name, license_status, created_at, updated_at FROM stores WHERE id = ?').get(id);
+}
+
+function listUsers() {
+  return db.prepare(`
+    SELECT u.id, u.store_id, s.name AS store_name, u.name, u.username, u.role, u.active, u.created_at, u.updated_at
+    FROM users u
+    JOIN stores s ON s.id = u.store_id
+    ORDER BY s.name ASC, u.name ASC
+  `).all();
+}
+
+function createUser(input) {
+  const name = String(input.name || '').trim();
+  const username = String(input.username || '').trim();
+  const password = String(input.password || '').trim();
+  const role = String(input.role || 'cashier').trim();
+  const storeId = String(input.store_id || input.storeId || '').trim();
+  if (!name) throw new Error('El nombre es obligatorio');
+  if (!username) throw new Error('El usuario es obligatorio');
+  if (password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres');
+  if (!['admin', 'editor', 'cashier'].includes(role)) throw new Error('Rol invalido');
+  const store = db.prepare('SELECT id FROM stores WHERE id = ?').get(storeId);
+  if (!store) throw new Error('Sucursal no encontrada');
+  const id = randomUUID();
+  db.prepare(`
+    INSERT INTO users (id, store_id, name, username, password_hash, role, active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+  `).run(id, storeId, name, username, hashPassword(password), role);
+  return listUsers().find((user) => user.id === id);
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    store_id: user.store_id,
+    store_name: user.store_name,
+    name: user.name,
+    username: user.username,
+    role: user.role,
+    active: user.active
+  };
+}
+
+function getSessionToken(req) {
+  const cookie = req.headers.cookie || '';
+  const match = cookie.match(/(?:^|;\s*)sgi_session=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(String(password || ''), salt, 32).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  if (!stored || !stored.startsWith('scrypt$')) return false;
+  const [, salt, hash] = stored.split('$');
+  const candidate = scryptSync(String(password || ''), salt, 32);
+  const expected = Buffer.from(hash, 'hex');
+  return expected.length === candidate.length && timingSafeEqual(expected, candidate);
 }
 
 function serveStatic(res, pathname) {

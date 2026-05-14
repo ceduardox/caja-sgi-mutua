@@ -24,6 +24,21 @@ const els = {
   pendingSync: document.querySelector('#pendingSync'),
   connectionDot: document.querySelector('#connectionDot'),
   connectionText: document.querySelector('#connectionText'),
+  currentUserLabel: document.querySelector('#currentUserLabel'),
+  loginOverlay: document.querySelector('#loginOverlay'),
+  loginForm: document.querySelector('#loginForm'),
+  loginUsername: document.querySelector('#loginUsername'),
+  loginPassword: document.querySelector('#loginPassword'),
+  storeForm: document.querySelector('#storeForm'),
+  storeName: document.querySelector('#storeName'),
+  storesList: document.querySelector('#storesList'),
+  userForm: document.querySelector('#userForm'),
+  userName: document.querySelector('#userName'),
+  userUsername: document.querySelector('#userUsername'),
+  userPassword: document.querySelector('#userPassword'),
+  userStore: document.querySelector('#userStore'),
+  userRole: document.querySelector('#userRole'),
+  usersList: document.querySelector('#usersList'),
   productDialog: document.querySelector('#productDialog'),
   productForm: document.querySelector('#productForm'),
   productDialogTitle: document.querySelector('#productDialogTitle'),
@@ -108,16 +123,18 @@ boot();
 function boot() {
   setDefaultReportDates();
   bindEvents();
-  refreshAll();
+  initializeSession();
   setInterval(refreshSummary, 15000);
   renderIcons();
-  els.scanInput.focus();
 }
 
 function bindEvents() {
   els.tabs.forEach((tab) => {
     tab.addEventListener('click', () => showView(tab.dataset.view));
   });
+  els.loginForm.addEventListener('submit', login);
+  els.storeForm.addEventListener('submit', saveStore);
+  els.userForm.addEventListener('submit', saveUser);
   els.scanInput.addEventListener('input', debounce(handleSearch, 140));
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -189,7 +206,124 @@ function bindEvents() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadProducts(), refreshSummary(), loadSales(), checkHealth(), loadReports()]);
+  await Promise.all([loadProducts(), refreshSummary(), loadSales(), checkHealth(), loadReports(), loadAdminData()]);
+}
+
+async function initializeSession() {
+  try {
+    const data = await api('/api/session');
+    applySession(data.user);
+    await refreshAll();
+    els.scanInput.focus();
+  } catch {
+    els.loginOverlay.classList.add('active');
+    renderIcons();
+  }
+}
+
+async function login(event) {
+  event.preventDefault();
+  try {
+    const data = await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: els.loginUsername.value,
+        password: els.loginPassword.value
+      })
+    });
+    applySession(data.user);
+    els.loginOverlay.classList.remove('active');
+    await refreshAll();
+    els.scanInput.focus();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function applySession(user) {
+  state.user = user;
+  els.currentUserLabel.textContent = `${user.name} - ${user.store_name}`;
+  document.body.dataset.role = user.role;
+  document.querySelectorAll('.tab').forEach((tab) => {
+    const view = tab.dataset.view;
+    const allowed = user.role === 'admin' || (user.role === 'editor' && view !== 'adminView') || view === 'posView';
+    tab.hidden = !allowed;
+  });
+  if (user.role !== 'admin' && !document.querySelector('#posView')?.classList.contains('active')) {
+    showView('posView');
+  }
+  renderIcons();
+}
+
+async function loadAdminData() {
+  if (state.user?.role !== 'admin') return;
+  const [storesData, usersData] = await Promise.all([api('/api/stores'), api('/api/users')]);
+  renderStores(storesData.stores);
+  renderUsers(usersData.users);
+}
+
+function renderStores(stores) {
+  els.userStore.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
+  els.storesList.innerHTML = stores.map((store) => `
+    <div class="data-row">
+      <span class="row-icon"><i data-lucide="store"></i></span>
+      <div>
+        <strong>${escapeHtml(store.name)}</strong>
+        <div class="meta">${store.license_status || 'trial'}</div>
+      </div>
+    </div>
+  `).join('') || '<div class="empty">Sin sucursales.</div>';
+  renderIcons();
+}
+
+function renderUsers(users) {
+  els.usersList.innerHTML = users.map((user) => `
+    <div class="data-row">
+      <span class="row-icon"><i data-lucide="${user.role === 'admin' ? 'shield-check' : 'badge'}"></i></span>
+      <div>
+        <strong>${escapeHtml(user.name)}</strong>
+        <div class="meta">${escapeHtml(user.username)} - ${roleLabel(user.role)} - ${escapeHtml(user.store_name)}</div>
+      </div>
+      <span class="pill">${user.active ? 'Activo' : 'Inactivo'}</span>
+    </div>
+  `).join('') || '<div class="empty">Sin usuarios.</div>';
+  renderIcons();
+}
+
+async function saveStore(event) {
+  event.preventDefault();
+  try {
+    await api('/api/stores', {
+      method: 'POST',
+      body: JSON.stringify({ name: els.storeName.value })
+    });
+    els.storeName.value = '';
+    await loadAdminData();
+    showToast('Sucursal creada');
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  try {
+    await api('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: els.userName.value,
+        username: els.userUsername.value,
+        password: els.userPassword.value,
+        store_id: els.userStore.value,
+        role: els.userRole.value
+      })
+    });
+    els.userForm.reset();
+    await loadAdminData();
+    showToast('Usuario creado');
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function showView(viewId) {
@@ -1078,6 +1212,11 @@ function formatDate(value) {
 
 function paymentLabel(value) {
   const labels = { cash: 'Efectivo', card: 'Tarjeta', qr: 'QR', transfer: 'Transferencia' };
+  return labels[value] || value;
+}
+
+function roleLabel(value) {
+  const labels = { admin: 'Admin', editor: 'Editor', cashier: 'Cajera' };
   return labels[value] || value;
 }
 

@@ -22,10 +22,12 @@
         <button class="tab active" data-view="posView"><i data-lucide="scan-barcode"></i>Caja</button>
         <button class="tab" data-view="productsView"><i data-lucide="package"></i>Productos</button>
         <button class="tab" data-view="reportsView"><i data-lucide="chart-column-increasing"></i>Reportes</button>
+        <button class="tab admin-only" data-view="adminView"><i data-lucide="shield-check"></i>Admin</button>
       </nav>
       <div class="status">
         <span id="connectionDot" class="dot"></span>
         <span id="connectionText">Local</span>
+        <span id="currentUserLabel"></span>
         <i data-lucide="chevron-down"></i>
       </div>
     </header>
@@ -201,6 +203,58 @@
         <div id="reportSalesList" class="table-list"></div>
       </section>
     </main>
+
+    <main id="adminView" class="view page-view">
+      <section class="report-columns">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow with-icon"><i data-lucide="store"></i>Sucursales</p>
+              <h2>Crear sucursal</h2>
+            </div>
+          </div>
+          <form id="storeForm" class="stack-form">
+            <label>Nombre de sucursal<input id="storeName" required placeholder="Ej. Mutualista Norte"></label>
+            <button class="primary" type="submit"><i data-lucide="plus"></i>Crear sucursal</button>
+          </form>
+          <div id="storesList" class="data-list admin-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow with-icon"><i data-lucide="users"></i>Usuarios</p>
+              <h2>Crear cajera</h2>
+            </div>
+          </div>
+          <form id="userForm" class="stack-form">
+            <label>Nombre completo<input id="userName" required placeholder="Nombre de la cajera"></label>
+            <label>Usuario<input id="userUsername" required autocomplete="off" placeholder="usuario"></label>
+            <label>Contrasena temporal<input id="userPassword" required type="password" autocomplete="new-password" placeholder="Minimo 4 caracteres"></label>
+            <label>Sucursal<select id="userStore" required></select></label>
+            <label>Rol<select id="userRole"><option value="cashier">Cajera</option><option value="editor">Editor</option><option value="admin">Admin</option></select></label>
+            <button class="primary" type="submit"><i data-lucide="user-plus"></i>Crear usuario</button>
+          </form>
+          <div id="usersList" class="data-list admin-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="loginOverlay" class="login-overlay">
+      <form id="loginForm" class="login-card">
+        <div class="brand login-brand">
+          <div class="brand-mark"><i data-lucide="gem"></i></div>
+          <div>
+            <p class="eyebrow">Mutualista</p>
+            <h2>SGI Market Caja</h2>
+          </div>
+        </div>
+        <label>Usuario<input id="loginUsername" autocomplete="username" value="admin"></label>
+        <label>Contrasena<input id="loginPassword" type="password" autocomplete="current-password" value="admin123"></label>
+        <button class="primary" type="submit"><i data-lucide="log-in"></i>Ingresar</button>
+        <p class="login-note">Admin inicial: admin / admin123</p>
+      </form>
+    </div>
 
     <dialog id="productDialog">
       <form id="productForm" method="dialog">
