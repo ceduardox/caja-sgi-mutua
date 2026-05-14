@@ -95,6 +95,9 @@ CREATE TABLE IF NOT EXISTS cloud_sales (
   cash_change NUMERIC(12,2),
   qr_transaction_code TEXT,
   status TEXT NOT NULL DEFAULT 'completed',
+  void_reason TEXT,
+  voided_by UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
+  voided_at TIMESTAMPTZ,
   payload_json JSONB NOT NULL,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (store_id, id)
@@ -104,6 +107,9 @@ ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cashier_user_id UUID REFERENCES
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_received NUMERIC(12,2);
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS cash_change NUMERIC(12,2);
 ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS qr_transaction_code TEXT;
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS void_reason TEXT;
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS voided_by UUID REFERENCES cloud_users(id) ON DELETE SET NULL;
+ALTER TABLE cloud_sales ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS cloud_sale_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -114,6 +120,18 @@ CREATE TABLE IF NOT EXISTS cloud_sale_items (
   quantity NUMERIC(12,2) NOT NULL,
   unit_price NUMERIC(12,2) NOT NULL,
   total NUMERIC(12,2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cloud_sale_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  sale_id UUID NOT NULL REFERENCES cloud_sales(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  reason TEXT,
+  before_json JSONB,
+  after_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS sync_events (
@@ -137,4 +155,5 @@ CREATE INDEX IF NOT EXISTS idx_stores_tenant ON stores(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cloud_products_store_name ON cloud_products(store_id, name);
 CREATE INDEX IF NOT EXISTS idx_cloud_products_store_barcode ON cloud_products(store_id, barcode);
 CREATE INDEX IF NOT EXISTS idx_cloud_sales_store_date ON cloud_sales(store_id, local_created_at);
+CREATE INDEX IF NOT EXISTS idx_cloud_sale_audit_sale ON cloud_sale_audit_logs(store_id, sale_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_events_status ON sync_events(status, created_at);

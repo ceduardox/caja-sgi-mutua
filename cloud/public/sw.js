@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sgi-market-cloud-v1';
+const CACHE_NAME = 'sgi-market-cloud-v2';
 const APP_SHELL = [
   '/',
   '/index.html',

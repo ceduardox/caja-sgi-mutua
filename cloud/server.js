@@ -104,7 +104,7 @@ async function handleApi(req, res, url) {
   const ctx = await getRequestContext(req);
 
   if (method === 'GET' && url.pathname === '/api/session') {
-    sendJson(res, 200, { user: ctx.user });
+    sendJson(res, 200, { user: ctx.user, store: await getActiveStore(ctx, url.searchParams.get('store_id')) });
     return;
   }
 
@@ -130,6 +130,20 @@ async function handleApi(req, res, url) {
   if (method === 'GET' && url.pathname === '/api/stores') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
     sendJson(res, 200, { stores: await listStores(ctx) });
+    return;
+  }
+
+  if (method === 'PUT' && url.pathname === '/api/active-store') {
+    requireRole(ctx, ['master_admin', 'tenant_owner']);
+    sendJson(res, 200, { store: await getActiveStore(ctx, (await readJson(req)).store_id) });
+    return;
+  }
+
+  const storeMatch = url.pathname.match(/^\/api\/stores\/([^/]+)$/);
+  if (storeMatch && method === 'PUT') {
+    requireRole(ctx, ['master_admin', 'tenant_owner']);
+    const store = await updateStore(ctx, storeMatch[1], await readJson(req));
+    sendJson(res, 200, { store });
     return;
   }
 
@@ -163,7 +177,35 @@ async function handleApi(req, res, url) {
 
   if (method === 'GET' && url.pathname === '/api/sales') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
-    sendJson(res, 200, { sales: await listSales(ctx) });
+    sendJson(res, 200, { sales: await listSales(ctx, url.searchParams.get('store_id')) });
+    return;
+  }
+
+  const salePaymentMatch = url.pathname.match(/^\/api\/sales\/([^/]+)\/payment$/);
+  if (salePaymentMatch && method === 'PATCH') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    const sale = await updateSalePayment(ctx, salePaymentMatch[1], await readJson(req));
+    sendJson(res, 200, { sale });
+    return;
+  }
+
+  const saleVoidMatch = url.pathname.match(/^\/api\/sales\/([^/]+)\/void$/);
+  if (saleVoidMatch && method === 'POST') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    const sale = await voidSale(ctx, saleVoidMatch[1], await readJson(req));
+    sendJson(res, 200, { sale });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/summary') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    sendJson(res, 200, await getSummary(ctx, url.searchParams.get('store_id')));
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/reports') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    sendJson(res, 200, await getReports(ctx, url.searchParams));
     return;
   }
 
@@ -347,6 +389,48 @@ async function createStore(ctx, input) {
   return result.rows[0];
 }
 
+async function updateStore(ctx, id, input) {
+  const name = cleanRequired(input.name, 'Nombre de sucursal');
+  const values = [name, id];
+  let where = 'WHERE id = $2';
+  if (ctx.user.role === 'tenant_owner') {
+    values.push(ctx.user.tenant_id);
+    where += ' AND tenant_id = $3';
+  }
+  const result = await pool.query(`
+    UPDATE stores
+    SET name = $1, updated_at = now()
+    ${where}
+    RETURNING id, tenant_id, name, address, active, created_at
+  `, values);
+  if (result.rowCount === 0) throw new HttpError(404, 'Sucursal no encontrada');
+  return result.rows[0];
+}
+
+async function getActiveStore(ctx, requestedStoreId) {
+  if (!cleanOptional(requestedStoreId) && ctx.user.role === 'master_admin') {
+    const firstStore = await pool.query(`
+      SELECT s.id, s.tenant_id, t.business_name, s.name, s.address, s.active
+      FROM stores s
+      JOIN tenants t ON t.id = s.tenant_id
+      WHERE s.active = TRUE
+      ORDER BY t.business_name ASC, s.name ASC
+      LIMIT 1
+    `);
+    if (firstStore.rowCount === 0) throw new HttpError(400, 'No hay sucursales activas');
+    return firstStore.rows[0];
+  }
+  const storeId = await resolveStoreId(ctx, requestedStoreId);
+  const result = await pool.query(`
+    SELECT s.id, s.tenant_id, t.business_name, s.name, s.address, s.active
+    FROM stores s
+    JOIN tenants t ON t.id = s.tenant_id
+    WHERE s.id = $1
+  `, [storeId]);
+  if (result.rowCount === 0) throw new HttpError(404, 'Sucursal no encontrada');
+  return result.rows[0];
+}
+
 async function listUsers(ctx) {
   const result = await pool.query(`
     SELECT u.id, u.tenant_id, u.store_id, t.business_name, s.name AS store_name,
@@ -416,12 +500,12 @@ async function updateUserPassword(ctx, id, input) {
   return result.rows[0];
 }
 
-async function listSales(ctx) {
-  const filter = saleScopeFilter(ctx, 's');
+async function listSales(ctx, requestedStoreId) {
+  const filter = saleScopeFilter(ctx, 's', requestedStoreId);
   const result = await pool.query(`
-    SELECT s.id, s.store_id, st.name AS store_name, t.business_name, s.total,
+    SELECT s.id, s.store_id, st.name AS store_name, t.business_name, s.total::float,
       s.payment_method, s.cash_received, s.cash_change, s.qr_transaction_code,
-      s.status, s.local_created_at, s.received_at, u.name AS cashier_name
+      s.status, s.local_created_at AS created_at, s.local_created_at, s.received_at, u.name AS cashier_name
     FROM cloud_sales s
     JOIN stores st ON st.id = s.store_id
     JOIN tenants t ON t.id = st.tenant_id
@@ -452,7 +536,7 @@ async function listProducts(ctx, query, requestedStoreId) {
   const result = await pool.query(`
     SELECT p.id, p.store_id, p.category_id, c.name AS category_name, p.barcode, p.sku,
       p.name, p.cost_price::float, p.sale_price::float, p.stock::float,
-      p.min_stock::float, p.unit, p.image_data, p.active, p.updated_at
+      p.min_stock::float, p.unit, p.image_data AS image_path, p.image_data, p.active, p.updated_at
     FROM cloud_products p
     LEFT JOIN cloud_categories c ON c.id = p.category_id
     ${where}
@@ -470,7 +554,7 @@ async function createProduct(ctx, input) {
       store_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, image_data
     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
     RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
-      stock::float, min_stock::float, unit, image_data, active, updated_at
+      stock::float, min_stock::float, unit, image_data AS image_path, image_data, active, updated_at
   `, [storeId, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.image_data]);
   return result.rows[0];
 }
@@ -484,7 +568,7 @@ async function updateProduct(ctx, id, input) {
       stock = $6, min_stock = $7, unit = $8, image_data = $9, updated_at = now()
     WHERE id = $10 AND store_id = $11
     RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
-      stock::float, min_stock::float, unit, image_data, active, updated_at
+      stock::float, min_stock::float, unit, image_data AS image_path, image_data, active, updated_at
   `, [product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.image_data, id, storeId]);
   if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
   return result.rows[0];
@@ -523,13 +607,14 @@ async function createOnlineSale(ctx, input) {
     const payment = normalizePaymentDetails(paymentMethod, total, input.cash_received || input.cashReceived, input.qr_transaction_code || input.qrTransactionCode);
     const saleId = randomUUID();
     const payload = { online: true, items: normalizedItems.map((item) => ({ product_id: item.product.id, quantity: item.quantity, unit_price: item.unitPrice, total: item.total })) };
-    const saleResult = await client.query(`
+  const saleResult = await client.query(`
       INSERT INTO cloud_sales (
         id, store_id, cashier_user_id, local_created_at, subtotal, discount_total, total,
         payment_method, cash_received, cash_change, qr_transaction_code, status, payload_json
       ) VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,$9,$10,'completed',$11)
       RETURNING id, store_id, local_created_at, subtotal::float, discount_total::float,
-        total::float, payment_method, cash_received::float, cash_change::float, qr_transaction_code, status
+        local_created_at AS created_at, total::float, payment_method, cash_received::float,
+        cash_change::float, qr_transaction_code, status
     `, [saleId, storeId, ctx.user.id, subtotal, discount, total, paymentMethod, payment.cash_received, payment.cash_change, payment.qr_transaction_code, payload]);
     for (const item of normalizedItems) {
       await client.query(`
@@ -538,13 +623,219 @@ async function createOnlineSale(ctx, input) {
       `, [saleId, item.product.id, item.product.name, item.product.barcode, item.quantity, item.unitPrice, item.total]);
     }
     await client.query('COMMIT');
-    return saleResult.rows[0];
+    return {
+      ...saleResult.rows[0],
+      items: normalizedItems.map((item) => ({
+        product_id: item.product.id,
+        product_name: item.product.name,
+        barcode: item.product.barcode,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        line_total: item.total,
+        total: item.total
+      }))
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+}
+
+async function updateSalePayment(ctx, id, input) {
+  const sale = await getEditableSale(ctx, id);
+  const paymentMethod = normalizePaymentMethod(input.payment_method || input.paymentMethod);
+  const payment = normalizePaymentDetails(paymentMethod, Number(sale.total || 0), input.cash_received || input.cashReceived, input.qr_transaction_code || input.qrTransactionCode);
+  const before = saleAuditSnapshot(sale);
+  const result = await pool.query(`
+    UPDATE cloud_sales
+    SET payment_method = $1, cash_received = $2, cash_change = $3, qr_transaction_code = $4
+    WHERE id = $5 AND store_id = $6 AND status = 'completed'
+    RETURNING id, store_id, local_created_at AS created_at, total::float, payment_method,
+      cash_received::float, cash_change::float, qr_transaction_code, status, void_reason, voided_by, voided_at
+  `, [paymentMethod, payment.cash_received, payment.cash_change, payment.qr_transaction_code, id, sale.store_id]);
+  const updated = result.rows[0];
+  await insertSaleAudit(ctx, sale.store_id, id, 'payment_update', cleanOptional(input.reason) || 'Correccion de pago', before, saleAuditSnapshot(updated));
+  return updated;
+}
+
+async function voidSale(ctx, id, input) {
+  const reason = cleanRequired(input.reason, 'Motivo de anulacion');
+  const sale = await getEditableSale(ctx, id);
+  const before = saleAuditSnapshot(sale);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const items = await client.query(`
+      SELECT product_id, product_name, quantity::float
+      FROM cloud_sale_items
+      WHERE sale_id = $1
+    `, [id]);
+    const updated = await client.query(`
+      UPDATE cloud_sales
+      SET status = 'void', void_reason = $1, voided_by = $2, voided_at = now()
+      WHERE id = $3 AND store_id = $4 AND status = 'completed'
+      RETURNING id, store_id, local_created_at AS created_at, total::float, payment_method,
+        cash_received::float, cash_change::float, qr_transaction_code, status, void_reason, voided_by, voided_at
+    `, [reason, ctx.user.id, id, sale.store_id]);
+    if (updated.rowCount === 0) throw new HttpError(404, 'Venta no encontrada');
+    for (const item of items.rows) {
+      if (!item.product_id) continue;
+      await client.query('UPDATE cloud_products SET stock = stock + $1, updated_at = now() WHERE id = $2 AND store_id = $3', [item.quantity, item.product_id, sale.store_id]);
+    }
+    await client.query(`
+      INSERT INTO cloud_sale_audit_logs (store_id, sale_id, user_id, action, reason, before_json, after_json)
+      VALUES ($1,$2,$3,'void',$4,$5,$6)
+    `, [sale.store_id, id, ctx.user.id, reason, before, saleAuditSnapshot(updated.rows[0])]);
+    await client.query('COMMIT');
+    return updated.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getEditableSale(ctx, id) {
+  const result = await pool.query(`
+    SELECT id, store_id, local_created_at AS created_at, total::float, payment_method,
+      cash_received::float, cash_change::float, qr_transaction_code, status, void_reason, voided_by, voided_at
+    FROM cloud_sales
+    WHERE id = $1
+  `, [id]);
+  const sale = result.rows[0];
+  if (!sale) throw new HttpError(404, 'Venta no encontrada');
+  await resolveStoreId(ctx, sale.store_id);
+  if (sale.status !== 'completed') throw new HttpError(400, 'La venta ya esta anulada');
+  return sale;
+}
+
+async function insertSaleAudit(ctx, storeId, saleId, action, reason, before, after) {
+  await pool.query(`
+    INSERT INTO cloud_sale_audit_logs (store_id, sale_id, user_id, action, reason, before_json, after_json)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+  `, [storeId, saleId, ctx.user.id, action, reason || null, before, after]);
+}
+
+function saleAuditSnapshot(sale) {
+  return {
+    id: sale.id,
+    total: normalizeMoney(sale.total),
+    payment_method: sale.payment_method,
+    cash_received: sale.cash_received,
+    cash_change: sale.cash_change,
+    qr_transaction_code: sale.qr_transaction_code,
+    status: sale.status,
+    void_reason: sale.void_reason,
+    voided_by: sale.voided_by,
+    voided_at: sale.voided_at
+  };
+}
+
+async function getSummary(ctx, requestedStoreId) {
+  const storeId = await resolveStoreId(ctx, requestedStoreId);
+  const [sales, lowStock] = await Promise.all([
+    pool.query(`
+      SELECT COUNT(*)::int AS count, COALESCE(SUM(total), 0)::float AS total
+      FROM cloud_sales
+      WHERE store_id = $1 AND status = 'completed' AND local_created_at::date = CURRENT_DATE
+    `, [storeId]),
+    pool.query(`
+      SELECT COUNT(*)::int AS count
+      FROM cloud_products
+      WHERE store_id = $1 AND active = TRUE AND stock <= min_stock
+    `, [storeId])
+  ]);
+  return {
+    today: new Date().toISOString().slice(0, 10),
+    sales_count: sales.rows[0].count,
+    sales_total: Number(sales.rows[0].total || 0),
+    low_stock_count: lowStock.rows[0].count,
+    pending_sync_count: 0
+  };
+}
+
+async function getReports(ctx, params) {
+  const storeId = await resolveStoreId(ctx, params.get('store_id'));
+  const today = new Date().toISOString().slice(0, 10);
+  const from = cleanDate(params.get('from')) || today;
+  const to = cleanDate(params.get('to')) || today;
+  const fromStamp = `${from}T00:00:00`;
+  const toStamp = `${to}T23:59:59`;
+  const [totals, byDay, bestSellers, lowStock, paymentMethods, sales] = await Promise.all([
+    pool.query(`
+      SELECT COUNT(DISTINCT s.id)::int AS sales_count,
+        COALESCE(SUM(si.quantity), 0)::float AS units_sold,
+        COALESCE(SUM(si.total), 0)::float AS revenue,
+        COALESCE(SUM((si.unit_price - COALESCE(p.cost_price, 0)) * si.quantity), 0)::float AS gross_profit
+      FROM cloud_sales s
+      LEFT JOIN cloud_sale_items si ON si.sale_id = s.id
+      LEFT JOIN cloud_products p ON p.id = si.product_id
+      WHERE s.store_id = $1 AND s.status = 'completed' AND s.local_created_at BETWEEN $2 AND $3
+    `, [storeId, fromStamp, toStamp]),
+    pool.query(`
+      SELECT s.local_created_at::date AS day, COUNT(*)::int AS sales_count, COALESCE(SUM(s.total), 0)::float AS total
+      FROM cloud_sales s
+      WHERE s.store_id = $1 AND s.status = 'completed' AND s.local_created_at BETWEEN $2 AND $3
+      GROUP BY s.local_created_at::date
+      ORDER BY day ASC
+    `, [storeId, fromStamp, toStamp]),
+    pool.query(`
+      SELECT si.product_id, si.product_name,
+        COALESCE(SUM(si.quantity), 0)::float AS quantity,
+        COALESCE(SUM(si.total), 0)::float AS total,
+        COALESCE(SUM((si.unit_price - COALESCE(p.cost_price, 0)) * si.quantity), 0)::float AS gross_profit
+      FROM cloud_sales s
+      JOIN cloud_sale_items si ON si.sale_id = s.id
+      LEFT JOIN cloud_products p ON p.id = si.product_id
+      WHERE s.store_id = $1 AND s.status = 'completed' AND s.local_created_at BETWEEN $2 AND $3
+      GROUP BY si.product_id, si.product_name
+      ORDER BY quantity DESC, total DESC
+      LIMIT 10
+    `, [storeId, fromStamp, toStamp]),
+    pool.query(`
+      SELECT id, name, barcode, sku, stock::float, min_stock::float, sale_price::float, image_data AS image_path
+      FROM cloud_products
+      WHERE store_id = $1 AND active = TRUE AND stock <= min_stock
+      ORDER BY stock ASC, name ASC
+      LIMIT 50
+    `, [storeId]),
+    pool.query(`
+      SELECT payment_method, COUNT(*)::int AS sales_count, COALESCE(SUM(total), 0)::float AS total
+      FROM cloud_sales
+      WHERE store_id = $1 AND status = 'completed' AND local_created_at BETWEEN $2 AND $3
+      GROUP BY payment_method
+      ORDER BY total DESC
+    `, [storeId, fromStamp, toStamp]),
+    pool.query(`
+      SELECT id, store_id, local_created_at AS created_at, total::float, payment_method,
+        cash_received::float, cash_change::float, qr_transaction_code, status
+      FROM cloud_sales
+      WHERE store_id = $1 AND local_created_at BETWEEN $2 AND $3
+      ORDER BY local_created_at DESC
+      LIMIT 100
+    `, [storeId, fromStamp, toStamp])
+  ]);
+  const totalRow = totals.rows[0];
+  const revenue = Number(totalRow.revenue || 0);
+  const grossProfit = Number(totalRow.gross_profit || 0);
+  return {
+    range: { from, to },
+    totals: {
+      sales_count: totalRow.sales_count,
+      units_sold: Number(totalRow.units_sold || 0),
+      revenue,
+      gross_profit: grossProfit,
+      margin_percent: revenue > 0 ? (grossProfit / revenue) * 100 : 0
+    },
+    by_day: byDay.rows,
+    best_sellers: bestSellers.rows,
+    low_stock: lowStock.rows,
+    payment_methods: paymentMethods.rows,
+    sales: sales.rows
+  };
 }
 
 async function handleSyncPush(body, res) {
@@ -634,7 +925,20 @@ function storeScopeFilter(ctx, alias) {
   return { join: '', where: `WHERE ${alias}.id = $1`, values: [ctx.user.store_id] };
 }
 
-function saleScopeFilter(ctx, alias) {
+function saleScopeFilter(ctx, alias, requestedStoreId) {
+  if (cleanOptional(requestedStoreId)) {
+    if (ctx.user.role === 'tenant_owner') {
+      return {
+        join: `JOIN stores requested_store ON requested_store.id = ${alias}.store_id`,
+        where: `WHERE ${alias}.store_id = $1 AND requested_store.tenant_id = $2`,
+        values: [requestedStoreId, ctx.user.tenant_id]
+      };
+    }
+    if (!['master_admin'].includes(ctx.user.role) && requestedStoreId !== ctx.user.store_id) {
+      return { join: '', where: `WHERE ${alias}.store_id = $1`, values: [ctx.user.store_id] };
+    }
+    return { join: '', where: `WHERE ${alias}.store_id = $1`, values: [requestedStoreId] };
+  }
   if (ctx.user.role === 'master_admin') return { join: '', where: '', values: [] };
   if (ctx.user.role === 'tenant_owner') {
     return { join: `JOIN stores scoped_store ON scoped_store.id = ${alias}.store_id`, where: 'WHERE scoped_store.tenant_id = $1', values: [ctx.user.tenant_id] };
@@ -746,7 +1050,7 @@ async function resolveStoreId(ctx, requestedStoreId) {
 }
 
 function normalizeProductInput(input) {
-  const image = cleanOptional(input.image_data || input.imageData);
+  const image = cleanOptional(input.image_data || input.imageData || input.image_path || input.imagePath);
   if (image && !image.startsWith('data:image/')) throw new HttpError(400, 'La imagen debe ser JPG, PNG o WEBP');
   return {
     barcode: cleanOptional(input.barcode),
@@ -816,6 +1120,11 @@ function cleanRequired(value, label) {
 function cleanOptional(value) {
   const text = String(value || '').trim();
   return text || null;
+}
+
+function cleanDate(value) {
+  const text = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 function loadEnv() {

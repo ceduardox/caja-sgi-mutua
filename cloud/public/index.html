@@ -3,140 +3,396 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SGI Market Cloud</title>
+    <title>SGI Market Caja</title>
     <meta name="theme-color" content="#071c2f">
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="icon" href="/assets/favicon.png">
+    <link rel="icon" type="image/png" href="/assets/favicon.png">
     <link rel="apple-touch-icon" href="/assets/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <p>Panel central</p>
-        <h1>SGI Market Cloud</h1>
+      <div class="brand">
+        <div class="brand-mark image-mark"><img src="/assets/favicon.png" alt=""></div>
+        <div>
+          <p class="eyebrow">Sistema de ventas</p>
+          <h1>SGI Market Caja</h1>
+        </div>
       </div>
-      <button id="logoutButton" hidden>Cerrar sesion</button>
+      <nav class="tabs" aria-label="Modulos">
+        <button class="tab active" data-view="posView"><i data-lucide="scan-barcode"></i>Caja</button>
+        <button class="tab" data-view="productsView"><i data-lucide="package"></i>Productos</button>
+        <button class="tab" data-view="reportsView"><i data-lucide="chart-column-increasing"></i>Reportes</button>
+        <button class="tab admin-only" data-view="adminView"><i data-lucide="shield-check"></i>Admin</button>
+      </nav>
+      <div class="status">
+        <span id="connectionDot" class="dot"></span>
+        <span id="connectionText">Local</span>
+        <label id="activeStoreControl" class="active-store-control" hidden>
+          <span>Sucursal activa</span>
+          <select id="activeStoreSelect"></select>
+        </label>
+        <span id="currentUserLabel"></span>
+        <i data-lucide="chevron-down"></i>
+      </div>
     </header>
 
-    <main>
-      <section id="loginView" class="card login-card">
-        <h2>Ingresar</h2>
-        <form id="loginForm">
-          <label>Usuario<input id="username" autocomplete="username" required></label>
-          <label>Contrasena<input id="password" type="password" autocomplete="current-password" required></label>
-          <button type="submit">Ingresar</button>
-        </form>
+    <main id="posView" class="layout view active">
+      <section class="panel sale-panel">
+        <div class="panel-header">
+          <div class="title-row">
+            <span class="section-icon"><i data-lucide="scan-barcode"></i></span>
+            <div>
+            <p class="eyebrow">Venta</p>
+            <h2>Caja principal</h2>
+            </div>
+          </div>
+          <button id="clearCartButton" class="ghost"><i data-lucide="trash-2"></i>Limpiar</button>
+        </div>
+
+        <label class="scan-box">
+          <span>Escanear o buscar producto</span>
+          <div class="input-shell">
+            <i data-lucide="search"></i>
+            <input id="scanInput" autocomplete="off" placeholder="Codigo de barras, SKU o nombre">
+          </div>
+          <small>Con lector USB: escanea y se agrega al carrito.</small>
+        </label>
+
+        <div id="searchResults" class="search-results"></div>
+
+        <div class="cart">
+          <div class="cart-head">
+            <span>Producto</span>
+            <span>Cant.</span>
+            <span>Total</span>
+          </div>
+          <div id="cartItems" class="cart-items"></div>
+        </div>
+
+        <div class="totals">
+          <span>Total</span>
+          <strong id="cartTotal">Bs 0.00</strong>
+        </div>
+
+        <button id="checkoutButton" class="primary"><i data-lucide="credit-card"></i>Cobrar venta</button>
       </section>
 
-      <section id="dashboardView" hidden>
-        <div class="toolbar card">
-          <label>Sucursal activa<select id="activeStore"></select></label>
-          <button id="installButton" class="secondary" hidden>Instalar app</button>
+      <aside class="side">
+        <section class="panel summary-panel">
+          <p class="eyebrow with-icon"><i data-lucide="calendar-days"></i>Hoy</p>
+          <div class="summary-grid">
+            <div>
+              <span class="summary-icon"><i data-lucide="wallet-cards"></i></span>
+              <span>Vendido</span>
+              <strong id="todayTotal">Bs 0.00</strong>
+            </div>
+            <div>
+              <span class="summary-icon"><i data-lucide="shopping-cart"></i></span>
+              <span>Ventas</span>
+              <strong id="todayCount">0</strong>
+            </div>
+            <div>
+              <span class="summary-icon"><i data-lucide="badge-alert"></i></span>
+              <span>Stock bajo</span>
+              <strong id="lowStock">0</strong>
+            </div>
+            <div>
+              <span class="summary-icon muted"><i data-lucide="cloud"></i></span>
+              <span>Pendiente nube</span>
+              <strong id="pendingSync">0</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow with-icon"><i data-lucide="package"></i>Inventario rapido</p>
+          <div id="productList" class="product-list compact"></div>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow with-icon"><i data-lucide="clock"></i>Ventas recientes</p>
+          <div id="salesList" class="sales-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <main id="productsView" class="view page-view">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Inventario</p>
+            <h2>Gestion de productos</h2>
+          </div>
+          <div class="actions">
+            <button id="scanNewProductButton" class="secondary"><i data-lucide="scan-line"></i>Escanear nuevo</button>
+            <button id="newProductButton" class="primary small"><i data-lucide="plus"></i>Nuevo producto</button>
+          </div>
+        </div>
+        <label class="search-line">
+          <span>Buscar producto</span>
+          <input id="productSearchInput" autocomplete="off" placeholder="Nombre, codigo de barras o SKU">
+        </label>
+        <div id="productManagerList" class="manager-list"></div>
+      </section>
+    </main>
+
+    <main id="reportsView" class="view page-view">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Analitica local</p>
+            <h2>Reportes</h2>
+          </div>
+          <div class="date-filters">
+            <input id="reportFrom" type="date">
+            <input id="reportTo" type="date">
+            <button id="loadReportsButton" class="secondary"><i data-lucide="refresh-cw"></i>Actualizar</button>
+          </div>
+        </div>
+        <div class="report-grid">
+          <div class="metric"><span>Ingresos</span><strong id="reportRevenue">Bs 0.00</strong></div>
+          <div class="metric"><span>Ganancia bruta</span><strong id="reportProfit">Bs 0.00</strong></div>
+          <div class="metric"><span>Margen</span><strong id="reportMargin">0%</strong></div>
+          <div class="metric"><span>Unidades</span><strong id="reportUnits">0</strong></div>
+        </div>
+      </section>
+
+      <section class="report-columns">
+        <div class="panel">
+          <p class="eyebrow">Mas vendidos</p>
+          <div id="bestSellersList" class="data-list"></div>
+        </div>
+        <div class="panel">
+          <p class="eyebrow">Stock bajo</p>
+          <div id="lowStockList" class="data-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Visual</p>
+            <h2>Graficos de venta</h2>
+          </div>
+          <span id="chartsStatus" class="meta">ECharts</span>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-box">
+            <h3>Ventas por dia</h3>
+            <div id="salesTrendChart" class="chart"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Productos mas vendidos</h3>
+            <div id="productsChart" class="chart"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Metodos de pago</h3>
+            <div id="paymentsChart" class="chart short"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Stock bajo</h3>
+            <div id="stockChart" class="chart short"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Historial</p>
+            <h2>Ventas del periodo</h2>
+          </div>
+          <button id="exportSalesButton" class="secondary"><i data-lucide="download"></i>Exportar CSV</button>
+        </div>
+        <div id="reportSalesList" class="table-list"></div>
+      </section>
+    </main>
+
+    <main id="adminView" class="view page-view">
+      <section class="report-columns">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow with-icon"><i data-lucide="store"></i>Sucursales</p>
+              <h2>Crear sucursal</h2>
+            </div>
+          </div>
+          <form id="storeForm" class="stack-form">
+            <label>Nombre de sucursal<input id="storeName" required placeholder="Ej. Sucursal Centro"></label>
+            <button class="primary" type="submit"><i data-lucide="plus"></i>Crear sucursal</button>
+          </form>
+          <div id="storesList" class="data-list admin-list"></div>
         </div>
 
-        <div class="grid stats">
-          <article><span>Clientes</span><strong id="tenantCount">0</strong></article>
-          <article><span>Sucursales</span><strong id="storeCount">0</strong></article>
-          <article><span>Usuarios</span><strong id="userCount">0</strong></article>
-          <article><span>Vendido hoy</span><strong id="todayTotal">Bs 0.00</strong></article>
-        </div>
-
-        <div class="grid panels">
-          <section class="card sale-panel">
-            <h2>Caja online</h2>
-            <form id="saleForm">
-              <label>Buscar producto<input id="productSearch" placeholder="Codigo, SKU o nombre" autocomplete="off"></label>
-              <div id="productResults" class="list compact"></div>
-              <div id="cartList" class="list compact"></div>
-              <div class="sale-total"><span>Total</span><strong id="cartTotal">Bs 0.00</strong></div>
-              <label>Metodo de pago<select id="paymentMethod"><option value="cash">Efectivo</option><option value="qr">QR</option></select></label>
-              <label id="cashReceivedLabel">Efectivo recibido<input id="cashReceived" type="number" step="0.01" min="0"></label>
-              <label id="qrCodeLabel" hidden>Codigo transaccion QR<input id="qrTransactionCode" placeholder="Opcional"></label>
-              <button type="submit">Cobrar venta</button>
-            </form>
-          </section>
-
-          <section class="card product-panel">
-            <h2>Producto</h2>
-            <form id="productForm">
-              <input id="productId" type="hidden">
-              <label>Nombre<input id="productName" required></label>
-              <label>Codigo de barras<input id="productBarcode" placeholder="Escanea o escribe"></label>
-              <label>SKU<input id="productSku"></label>
-              <div class="split">
-                <label>Precio venta<input id="productSalePrice" type="number" step="0.01" min="0" required></label>
-                <label>Costo<input id="productCostPrice" type="number" step="0.01" min="0"></label>
-              </div>
-              <div class="split">
-                <label>Stock<input id="productStock" type="number" step="0.01"></label>
-                <label>Minimo<input id="productMinStock" type="number" step="0.01"></label>
-              </div>
-              <button type="submit">Guardar producto</button>
-            </form>
-          </section>
-
-          <section class="card master-only">
-            <h2>Crear cliente</h2>
-            <form id="tenantForm">
-              <label>Negocio<input id="tenantBusinessName" required placeholder="Ej. Tienda Central"></label>
-              <label>Dueno<input id="tenantOwnerName" placeholder="Nombre"></label>
-              <label>Email<input id="tenantOwnerEmail" type="email" placeholder="correo@dominio.com"></label>
-              <button type="submit">Crear cliente</button>
-            </form>
-          </section>
-
-          <section class="card">
-            <h2>Crear sucursal</h2>
-            <form id="storeForm">
-              <label class="master-only">Cliente<select id="storeTenant"></select></label>
-              <label>Sucursal<input id="storeName" required placeholder="Ej. Mutualista"></label>
-              <label>Direccion<input id="storeAddress" placeholder="Opcional"></label>
-              <button type="submit">Crear sucursal</button>
-            </form>
-          </section>
-
-          <section class="card">
-            <h2>Crear usuario</h2>
-            <form id="userForm">
-              <label>Nombre<input id="userName" required></label>
-              <label>Usuario<input id="userUsername" required></label>
-              <label>Email<input id="userEmail" type="email"></label>
-              <label>Contrasena<input id="userPassword" type="password" required></label>
-              <label class="master-only">Cliente<select id="userTenant"></select></label>
-              <label id="userStoreLabel">Sucursal<select id="userStore"></select></label>
-              <label>Rol<select id="userRole"></select></label>
-              <button type="submit">Crear usuario</button>
-            </form>
-          </section>
-        </div>
-
-        <div class="grid lists">
-          <section class="card master-only">
-            <h2>Clientes</h2>
-            <div id="tenantsList" class="list"></div>
-          </section>
-          <section class="card">
-            <h2>Sucursales</h2>
-            <div id="storesList" class="list"></div>
-          </section>
-          <section class="card">
-            <h2>Usuarios</h2>
-            <div id="usersList" class="list"></div>
-          </section>
-          <section class="card">
-            <h2>Ventas</h2>
-            <div id="salesList" class="list"></div>
-          </section>
-          <section class="card">
-            <h2>Productos</h2>
-            <div id="productsList" class="list"></div>
-          </section>
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow with-icon"><i data-lucide="users"></i>Usuarios</p>
+              <h2>Crear cajera</h2>
+            </div>
+          </div>
+          <form id="userForm" class="stack-form">
+            <label>Nombre completo<input id="userName" required placeholder="Nombre de la cajera"></label>
+            <label>Usuario<input id="userUsername" required autocomplete="off" placeholder="usuario"></label>
+            <label>Contrasena temporal<input id="userPassword" required type="password" autocomplete="new-password" placeholder="Minimo 4 caracteres"></label>
+            <label>Sucursal<select id="userStore" required></select></label>
+            <label>Rol<select id="userRole"><option value="cashier">Cajera</option><option value="editor">Editor</option><option value="branch_admin">Admin sucursal</option><option value="owner">Admin general</option></select></label>
+            <button class="primary" type="submit"><i data-lucide="user-plus"></i>Crear usuario</button>
+          </form>
+          <div id="usersList" class="data-list admin-list"></div>
         </div>
       </section>
     </main>
 
-    <div id="toast" hidden></div>
+    <div id="loginOverlay" class="login-overlay">
+      <form id="loginForm" class="login-card">
+        <div class="brand login-brand">
+          <div class="brand-mark image-mark"><img src="/assets/favicon.png" alt=""></div>
+          <div>
+            <p class="eyebrow">Sistema de ventas</p>
+            <h2>SGI Market Caja</h2>
+          </div>
+        </div>
+        <label>Usuario<input id="loginUsername" autocomplete="username" value="admin"></label>
+        <label>Contrasena<input id="loginPassword" type="password" autocomplete="current-password"></label>
+        <button class="primary" type="submit"><i data-lucide="log-in"></i>Ingresar</button>
+        <div id="loginMessage" class="login-message" hidden></div>
+        <p class="login-note">Ingresa con el usuario asignado por el administrador.</p>
+      </form>
+    </div>
+
+    <dialog id="productDialog">
+      <form id="productForm" method="dialog">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Producto</p>
+            <h2 id="productDialogTitle">Nuevo producto</h2>
+          </div>
+          <button type="button" id="closeProductDialog" class="ghost">Cerrar</button>
+        </div>
+        <input type="hidden" id="productId">
+        <input type="hidden" id="productImageValue">
+        <div class="product-editor">
+          <div class="image-editor">
+            <div id="productImagePreview" class="product-image empty">Sin imagen</div>
+            <label class="file-button">
+              Subir imagen
+              <input id="productImageInput" type="file" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <label class="file-button mobile-camera-button">
+              Camara movil
+              <input id="mobileCameraInput" type="file" accept="image/*" capture="environment">
+            </label>
+            <button type="button" id="openCameraButton" class="secondary">Abrir camara PC</button>
+            <button type="button" id="removeProductImage" class="ghost">Quitar imagen</button>
+          </div>
+          <div>
+        <div class="form-grid">
+          <label>Nombre<input id="productName" required></label>
+          <label>Codigo de barras
+            <div class="inline-input">
+              <input id="productBarcode" autocomplete="off">
+              <button id="focusBarcodeButton" class="secondary" type="button">Escanear</button>
+            </div>
+            <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
+          </label>
+          <label>SKU<input id="productSku"></label>
+          <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required></label>
+          <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01"></label>
+          <label>Stock<input id="productStock" type="number" min="0" step="1" required></label>
+          <label>Stock minimo<input id="productMinStock" type="number" min="0" step="1"></label>
+          <label class="checkbox"><input id="productActive" type="checkbox" checked> Activo</label>
+        </div>
+        <label>Descripcion<textarea id="productDescription" rows="3"></textarea></label>
+          </div>
+        </div>
+        <button class="primary" type="submit">Guardar producto</button>
+      </form>
+    </dialog>
+
+    <dialog id="receiptDialog">
+      <div id="receiptContent" class="receipt"></div>
+      <div class="dialog-actions">
+        <button id="printReceiptButton" class="primary">Imprimir</button>
+        <button id="closeReceiptButton" class="secondary">Cerrar</button>
+      </div>
+    </dialog>
+
+    <dialog id="paymentDialog">
+      <form id="paymentForm" method="dialog">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Cobro</p>
+            <h2>Metodo de pago</h2>
+          </div>
+          <button type="button" id="closePaymentDialog" class="ghost">Cerrar</button>
+        </div>
+        <div class="payment-total">
+          <span>Total a cobrar</span>
+          <strong id="paymentTotal">Bs 0.00</strong>
+        </div>
+        <div class="payment-methods">
+          <label class="method-card active">
+            <input type="radio" name="paymentMethod" value="cash" checked>
+            <strong>Efectivo</strong>
+            <span>Calcula el cambio automaticamente.</span>
+          </label>
+          <label class="method-card">
+            <input type="radio" name="paymentMethod" value="qr">
+            <strong>QR</strong>
+            <span>Registra el codigo de transaccion si existe.</span>
+          </label>
+        </div>
+        <div id="cashFields" class="payment-fields">
+          <label>Efectivo recibido<input id="cashReceived" type="number" min="0" step="0.01"></label>
+          <div class="change-box">
+            <span>Cambio</span>
+            <strong id="cashChange">Bs 0.00</strong>
+          </div>
+        </div>
+        <div id="qrFields" class="payment-fields" hidden>
+          <label>Codigo de transaccion QR opcional<input id="qrTransactionCode" autocomplete="off" placeholder="Ej. 845912, banco, referencia"></label>
+        </div>
+        <button id="confirmPaymentButton" class="primary" type="submit">Confirmar venta</button>
+      </form>
+    </dialog>
+
+    <dialog id="imageDialog" class="image-dialog">
+      <div class="image-viewer">
+        <img id="expandedImage" alt="">
+      </div>
+      <div class="dialog-actions">
+        <button id="closeImageDialog" class="secondary">Cerrar</button>
+      </div>
+    </dialog>
+
+    <dialog id="cameraDialog" class="camera-dialog">
+      <div class="panel-header camera-header">
+        <div>
+          <p class="eyebrow">Camara</p>
+          <h2>Foto del producto</h2>
+        </div>
+        <button id="closeCameraDialog" class="ghost" type="button">Cerrar</button>
+      </div>
+      <div class="camera-stage">
+        <video id="cameraVideo" autoplay playsinline muted></video>
+        <canvas id="cameraCanvas" hidden></canvas>
+        <img id="cameraPreview" alt="" hidden>
+      </div>
+      <div class="camera-actions">
+        <button id="capturePhotoButton" class="primary" type="button">Tomar foto</button>
+        <button id="retakePhotoButton" class="secondary" type="button" hidden>Repetir</button>
+        <button id="confirmPhotoButton" class="primary" type="button" hidden>Confirmar imagen</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script src="/app.js"></script>
     <script>
       if ('serviceWorker' in navigator) {
