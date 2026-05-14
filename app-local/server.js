@@ -13,9 +13,12 @@ const DATA_DIR = process.env.SGI_DATA_DIR || join(ROOT, 'data');
 const DB_PATH = join(DATA_DIR, 'sgi-market-caja.sqlite');
 const CLOUD_PUBLIC_URL = String(process.env.CLOUD_PUBLIC_URL || '').replace(/\/+$/, '');
 const DEFAULT_STORE_ID = 'local-store';
-const DEVICE_ID = 'local-device';
+const DEVICE_ID = String(process.env.SGI_DEVICE_ID || 'local-device').trim() || 'local-device';
+const SYNC_INTERVAL_SECONDS = Math.max(60, Number(process.env.SGI_SYNC_INTERVAL_SECONDS || 300));
+const SYNC_BATCH_SIZE = Math.max(1, Number(process.env.SGI_SYNC_BATCH_SIZE || 100));
 const DEFAULT_USER_ID = 'admin-local';
 const sessions = new Map();
+let syncRunning = false;
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
@@ -23,6 +26,7 @@ const db = new DatabaseSync(DB_PATH);
 db.exec(readFileSync(join(ROOT, 'sqlite_schema.sql'), 'utf8'));
 migrateLocalDatabase();
 seedLocalData();
+startSyncWorker();
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -957,6 +961,109 @@ function enqueueSync(ctx, entityType, entityId, action, payload) {
       id, store_id, device_id, entity_type, entity_id, action, payload_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(randomUUID(), ctx.storeId, DEVICE_ID, entityType, entityId, action, JSON.stringify(payload));
+}
+
+function startSyncWorker() {
+  if (!CLOUD_PUBLIC_URL) {
+    console.log('Sin CLOUD_PUBLIC_URL: sincronizacion cloud desactivada.');
+    return;
+  }
+  console.log(`Sincronizacion cloud cada ${SYNC_INTERVAL_SECONDS} segundos.`);
+  setTimeout(() => syncPendingEvents().catch((error) => console.warn('Sync inicial fallida:', error.message)), 8000);
+  setInterval(() => {
+    syncPendingEvents().catch((error) => console.warn('Sync fallida:', error.message));
+  }, SYNC_INTERVAL_SECONDS * 1000);
+}
+
+async function syncPendingEvents() {
+  if (syncRunning || !CLOUD_PUBLIC_URL) return;
+  syncRunning = true;
+  try {
+    const groups = getPendingSyncGroups();
+    for (const group of groups) {
+      await syncStoreEvents(group);
+    }
+  } finally {
+    syncRunning = false;
+  }
+}
+
+function getPendingSyncGroups() {
+  const rows = db.prepare(`
+    SELECT id, store_id, device_id, entity_type, entity_id, action, payload_json
+    FROM sync_queue
+    WHERE status IN ('pending', 'failed')
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(SYNC_BATCH_SIZE);
+  const byStore = new Map();
+  for (const row of rows) {
+    if (!byStore.has(row.store_id)) byStore.set(row.store_id, []);
+    byStore.get(row.store_id).push(row);
+  }
+  return [...byStore.entries()].map(([storeId, events]) => ({ storeId, events }));
+}
+
+async function syncStoreEvents(group) {
+  const ids = group.events.map((event) => event.id);
+  markSyncing(ids);
+  try {
+    const response = await fetch(`${CLOUD_PUBLIC_URL}/api/sync/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        store_id: group.storeId,
+        device_id: DEVICE_ID,
+        events: group.events.map((event) => ({
+          id: event.id,
+          entity_type: event.entity_type,
+          entity_id: event.entity_id,
+          action: event.action,
+          payload: safeJsonParse(event.payload_json)
+        }))
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    markSynced(ids);
+  } catch (error) {
+    markSyncFailed(ids, error.message);
+  }
+}
+
+function markSyncing(ids) {
+  const update = db.prepare(`
+    UPDATE sync_queue
+    SET status = 'syncing', updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  for (const id of ids) update.run(id);
+}
+
+function markSynced(ids) {
+  const update = db.prepare(`
+    UPDATE sync_queue
+    SET status = 'synced', updated_at = CURRENT_TIMESTAMP, synced_at = CURRENT_TIMESTAMP, last_error = NULL
+    WHERE id = ?
+  `);
+  for (const id of ids) update.run(id);
+}
+
+function markSyncFailed(ids, message) {
+  const update = db.prepare(`
+    UPDATE sync_queue
+    SET status = 'failed', attempts = attempts + 1, last_error = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  for (const id of ids) update.run(message.slice(0, 500), id);
+}
+
+function safeJsonParse(value) {
+  try {
+    return JSON.parse(value || '{}');
+  } catch {
+    return {};
+  }
 }
 
 function loginUser(username, password) {

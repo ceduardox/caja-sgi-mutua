@@ -144,3 +144,11 @@ Dominio previsto cloud: caja.sgimarket.com
 - Se creo panel web basico en cloud/public.
 - Se actualizo cloud/postgres_schema.sql con tenants, stores, cloud_users,
   devices, cloud_sales y sync_events.
+
+15. Sincronizacion local hacia cloud
+- Se decidio no sincronizar cada 30 segundos sino cada 5 minutos.
+- Valor por defecto: SGI_SYNC_INTERVAL_SECONDS=300.
+- La caja local lee sync_queue y manda eventos a /api/sync/push.
+- Si cloud responde OK, marca eventos como synced.
+- Si falla internet o Railway, deja eventos en failed/pending para reintentar.
+- El cloud registra o actualiza automaticamente el dispositivo que sincroniza.

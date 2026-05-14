@@ -57,6 +57,9 @@ El archivo `railway.json` ya deja configurado ese comando y el healthcheck en
 `/api/health`. El backend cloud usa PostgreSQL por `DATABASE_URL` y crea el
 admin maestro desde las variables `MASTER_ADMIN_*`.
 
+La caja local intenta sincronizar eventos pendientes con el cloud cada 5 minutos
+por defecto usando `SGI_SYNC_INTERVAL_SECONDS=300`.
+
 ## Regla principal
 
 La tienda opera localmente. Railway no debe ser necesario para registrar ventas.

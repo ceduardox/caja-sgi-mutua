@@ -18,7 +18,9 @@ Flujo de una venta:
 6. Si no hay internet, el evento queda pendiente.
 
 Frecuencia inicial:
-- Intentar sincronizar cada 10 a 30 segundos si hay internet.
+- Intentar sincronizar cada 5 minutos si hay internet.
+- Valor local: SGI_SYNC_INTERVAL_SECONDS=300.
+- Minimo tecnico recomendado: 60 segundos para no saturar Railway.
 - Reintentar eventos fallidos con espera progresiva.
 - Mostrar al usuario: conectado, sin conexion, sincronizando, pendiente o error.
 
@@ -56,4 +58,3 @@ Datos que NO dependen de sincronizacion para operar:
 - Venta local.
 - Impresion de recibo.
 - Cierre de caja.
-

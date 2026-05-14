@@ -87,7 +87,9 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && url.pathname === '/api/sync/push') {
-    await handleSyncPush(req, res);
+    const body = await readJson(req);
+    await ensureSyncDevice(body);
+    await handleSyncPush(body, res);
     return;
   }
 
@@ -368,8 +370,7 @@ async function listSales(ctx) {
   return result.rows;
 }
 
-async function handleSyncPush(req, res) {
-  const body = await readJson(req);
+async function handleSyncPush(body, res) {
   const storeId = cleanRequired(body.store_id || body.storeId, 'store_id');
   const deviceId = cleanOptional(body.device_id || body.deviceId);
   const events = Array.isArray(body.events) ? body.events : [];
@@ -406,6 +407,19 @@ async function handleSyncPush(req, res) {
   } finally {
     client.release();
   }
+}
+
+async function ensureSyncDevice(body) {
+  const storeId = cleanOptional(body.store_id || body.storeId);
+  const deviceId = cleanOptional(body.device_id || body.deviceId);
+  if (!storeId || !deviceId) return;
+  await pool.query(`
+    INSERT INTO devices (id, store_id, name, last_seen_at)
+    VALUES ($1, $2, $3, now())
+    ON CONFLICT (id) DO UPDATE SET
+      store_id = excluded.store_id,
+      last_seen_at = now()
+  `, [deviceId, storeId, `Caja ${deviceId.slice(0, 8)}`]);
 }
 
 async function upsertCloudSale(client, storeId, deviceId, entityId, action, payload) {
