@@ -35,6 +35,13 @@ textarea {
   font: inherit;
 }
 
+input.field-error,
+select.field-error,
+textarea.field-error {
+  border-color: #d92d20 !important;
+  box-shadow: 0 0 0 4px rgba(217, 45, 32, 0.12) !important;
+}
+
 button {
   border: 0;
   border-radius: 10px;

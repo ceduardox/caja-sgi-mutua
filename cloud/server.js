@@ -60,7 +60,7 @@ async function handleRequest(req, res) {
     }
     serveStatic(res, url.pathname);
   } catch (error) {
-    sendJson(res, error.status || 500, { error: error.message || 'Error interno' });
+    sendJson(res, error.status || 500, { error: error.message || 'Error interno', field: error.field || undefined });
   }
 }
 
@@ -504,6 +504,8 @@ async function createUser(ctx, input) {
   }
   if (role !== 'tenant_owner' && !storeId) throw new HttpError(400, 'Sucursal requerida');
   if (!tenantId) throw new HttpError(400, 'Cliente requerido');
+  const duplicate = await pool.query('SELECT id FROM cloud_users WHERE username = $1', [username]);
+  if (duplicate.rowCount > 0) throw new HttpError(400, 'Ese usuario ya existe. Usa otro nombre de usuario.', 'username');
 
   const result = await pool.query(`
     INSERT INTO cloud_users (tenant_id, store_id, name, username, email, password_hash, role)
@@ -572,7 +574,7 @@ async function listProducts(ctx, query, requestedStoreId) {
   const result = await pool.query(`
     SELECT p.id, p.store_id, p.category_id, c.name AS category_name, p.barcode, p.sku,
       p.name, p.cost_price::float, p.sale_price::float, p.stock::float,
-      p.min_stock::float, p.unit, p.image_data AS image_path, p.image_data, p.active, p.updated_at
+      p.min_stock::float, p.unit, p.description, p.image_data AS image_path, p.image_data, p.active, p.updated_at
     FROM cloud_products p
     LEFT JOIN cloud_categories c ON c.id = p.category_id
     ${where}
@@ -585,27 +587,29 @@ async function listProducts(ctx, query, requestedStoreId) {
 async function createProduct(ctx, input) {
   const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
   const product = normalizeProductInput(input);
+  await assertUniqueProductCodes(storeId, product);
   const result = await pool.query(`
     INSERT INTO cloud_products (
-      store_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, image_data
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      store_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, description, image_data, active
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
-      stock::float, min_stock::float, unit, image_data AS image_path, image_data, active, updated_at
-  `, [storeId, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.image_data]);
+      stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
+  `, [storeId, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active]);
   return result.rows[0];
 }
 
 async function updateProduct(ctx, id, input) {
   const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
   const product = normalizeProductInput(input);
+  await assertUniqueProductCodes(storeId, product, id);
   const result = await pool.query(`
     UPDATE cloud_products
     SET barcode = $1, sku = $2, name = $3, cost_price = $4, sale_price = $5,
-      stock = $6, min_stock = $7, unit = $8, image_data = $9, updated_at = now()
-    WHERE id = $10 AND store_id = $11
+      stock = $6, min_stock = $7, unit = $8, description = $9, image_data = $10, active = $11, updated_at = now()
+    WHERE id = $12 AND store_id = $13
     RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
-      stock::float, min_stock::float, unit, image_data AS image_path, image_data, active, updated_at
-  `, [product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.image_data, id, storeId]);
+      stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
+  `, [product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, id, storeId]);
   if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
   return result.rows[0];
 }
@@ -1091,17 +1095,46 @@ async function resolveStoreId(ctx, requestedStoreId) {
 function normalizeProductInput(input) {
   const image = cleanOptional(input.image_data || input.imageData || input.image_path || input.imagePath);
   if (image && !image.startsWith('data:image/')) throw new HttpError(400, 'La imagen debe ser JPG, PNG o WEBP');
+  if (image && image.length > 1_300_000) throw new HttpError(400, 'La imagen optimizada sigue siendo demasiado pesada', 'image_data');
+  const salePrice = normalizeMoney(input.sale_price || input.salePrice || 0);
+  const costPrice = normalizeMoney(input.cost_price || input.costPrice || 0);
+  const stock = normalizeNumber(input.stock || 0);
+  const minStock = normalizeNumber(input.min_stock || input.minStock || 0);
+  if (!cleanOptional(input.name)) throw new HttpError(400, 'Nombre es obligatorio', 'name');
+  if (salePrice < 0) throw new HttpError(400, 'El precio de venta no puede ser negativo', 'sale_price');
+  if (costPrice < 0) throw new HttpError(400, 'El costo no puede ser negativo', 'cost_price');
+  if (stock < 0) throw new HttpError(400, 'El stock no puede ser negativo', 'stock');
+  if (minStock < 0) throw new HttpError(400, 'El stock minimo no puede ser negativo', 'min_stock');
   return {
     barcode: cleanOptional(input.barcode),
     sku: cleanOptional(input.sku),
     name: cleanRequired(input.name, 'Nombre'),
-    cost_price: normalizeMoney(input.cost_price || input.costPrice || 0),
-    sale_price: normalizeMoney(input.sale_price || input.salePrice || 0),
-    stock: normalizeNumber(input.stock || 0),
-    min_stock: normalizeNumber(input.min_stock || input.minStock || 0),
+    cost_price: costPrice,
+    sale_price: salePrice,
+    stock,
+    min_stock: minStock,
     unit: cleanOptional(input.unit) || 'unidad',
-    image_data: image
+    description: cleanOptional(input.description),
+    image_data: image,
+    active: input.active === undefined ? true : Boolean(input.active)
   };
+}
+
+async function assertUniqueProductCodes(storeId, product, exceptId = null) {
+  if (product.barcode) {
+    const barcode = await pool.query(
+      'SELECT id FROM cloud_products WHERE store_id = $1 AND barcode = $2 AND ($3::uuid IS NULL OR id <> $3::uuid)',
+      [storeId, product.barcode, exceptId]
+    );
+    if (barcode.rowCount > 0) throw new HttpError(400, 'Ya existe un producto con ese codigo de barras', 'barcode');
+  }
+  if (product.sku) {
+    const sku = await pool.query(
+      'SELECT id FROM cloud_products WHERE store_id = $1 AND sku = $2 AND ($3::uuid IS NULL OR id <> $3::uuid)',
+      [storeId, product.sku, exceptId]
+    );
+    if (sku.rowCount > 0) throw new HttpError(400, 'Ya existe un producto con ese SKU', 'sku');
+  }
 }
 
 function normalizePaymentMethod(value) {
@@ -1187,8 +1220,9 @@ function loadEnv() {
 }
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, field = null) {
     super(message);
     this.status = status;
+    this.field = field;
   }
 }

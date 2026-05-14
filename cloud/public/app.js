@@ -1,5 +1,10 @@
 const state = {
   products: [],
+  stores: [],
+  users: [],
+  sales: [],
+  user: null,
+  activeStore: null,
   cart: new Map(),
   lastSale: null,
   lastReport: null
@@ -312,8 +317,10 @@ async function logout() {
 async function loadAdminData() {
   if (!canManageAdmin(state.user?.role)) return;
   const [storesData, usersData] = await Promise.all([api('/api/stores'), api('/api/users')]);
-  renderStores(storesData.stores);
-  renderUsers(usersData.users);
+  state.stores = storesData.stores || [];
+  state.users = usersData.users || [];
+  renderStores(state.stores);
+  renderUsers(state.users);
   updateUserFormPermissions();
 }
 
@@ -423,8 +430,10 @@ function updateUserFormPermissions() {
 
 async function saveStore(event) {
   event.preventDefault();
+  clearFieldErrors(els.storeForm);
+  if (!requireField(els.storeName, 'Escribe el nombre de la sucursal')) return;
   try {
-    const activeStore = state.stores.find((store) => store.id === (els.activeStoreSelect.value || state.activeStore?.id));
+    const activeStore = (state.stores || []).find((store) => store.id === (els.activeStoreSelect.value || state.activeStore?.id));
     await api('/api/stores', {
       method: 'POST',
       body: JSON.stringify({ name: els.storeName.value, tenant_id: activeStore?.tenant_id })
@@ -433,14 +442,28 @@ async function saveStore(event) {
     await loadAdminData();
     showToast('Sucursal creada');
   } catch (error) {
-    showToast(error.message);
+    handleFormError(error, { name: els.storeName, tenant_id: els.activeStoreSelect });
   }
 }
 
 async function saveUser(event) {
   event.preventDefault();
+  clearFieldErrors(els.userForm);
+  if (!requireField(els.userName, 'Escribe el nombre completo')) return;
+  if (!requireField(els.userUsername, 'Escribe el usuario de acceso')) return;
+  if (!requireField(els.userPassword, 'Escribe una contrasena temporal')) return;
+  if (els.userPassword.value.trim().length < 4) {
+    markFieldError(els.userPassword, 'La contrasena debe tener al menos 4 caracteres');
+    return;
+  }
+  const roleNeedsStore = !['owner', 'tenant_owner'].includes(els.userRole.value);
+  if (roleNeedsStore && !requireField(els.userStore, 'Selecciona la sucursal del usuario')) return;
   try {
-    const selectedStore = state.stores.find((store) => store.id === els.userStore.value);
+    const selectedStore = (state.stores || []).find((store) => store.id === els.userStore.value);
+    if (roleNeedsStore && !selectedStore) {
+      markFieldError(els.userStore, 'La sucursal seleccionada no esta cargada. Actualiza la pagina e intenta de nuevo.');
+      return;
+    }
     await api('/api/users', {
       method: 'POST',
       body: JSON.stringify({
@@ -456,7 +479,14 @@ async function saveUser(event) {
     await loadAdminData();
     showToast('Usuario creado');
   } catch (error) {
-    showToast(error.message);
+    handleFormError(error, {
+      name: els.userName,
+      username: els.userUsername,
+      password: els.userPassword,
+      store_id: els.userStore,
+      tenant_id: els.userStore,
+      role: els.userRole
+    });
   }
 }
 
@@ -829,14 +859,14 @@ function openPaymentDialog() {
 
 async function checkout(event) {
   event.preventDefault();
+  clearFieldErrors(els.paymentForm);
   const items = [...state.cart.values()];
   const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
   const total = getCartTotal();
   const cashReceived = Number(els.cashReceived.value || 0);
 
   if (paymentMethod === 'cash' && cashReceived < total) {
-    showToast('El efectivo recibido no cubre el total');
-    els.cashReceived.focus();
+    markFieldError(els.cashReceived, 'El efectivo recibido no cubre el total');
     return;
   }
 
@@ -861,7 +891,11 @@ async function checkout(event) {
     await refreshAll();
     showReceipt(data.sale);
   } catch (error) {
-    showToast(error.message);
+    handleFormError(error, {
+      cash_received: els.cashReceived,
+      qr_transaction_code: els.qrTransactionCode,
+      store_id: els.activeStoreSelect
+    });
   }
 }
 
@@ -996,6 +1030,22 @@ function handleGlobalBarcodeScan(event) {
 
 async function saveProduct(event) {
   event.preventDefault();
+  clearFieldErrors(els.productForm);
+  if (!requireField(els.productName, 'Escribe el nombre del producto')) return;
+  if (!requireField(els.productSalePrice, 'Escribe el precio de venta')) return;
+  if (Number(els.productSalePrice.value) < 0) {
+    markFieldError(els.productSalePrice, 'El precio de venta no puede ser negativo');
+    return;
+  }
+  if (!requireField(els.productStock, 'Escribe el stock inicial')) return;
+  if (Number(els.productStock.value) < 0) {
+    markFieldError(els.productStock, 'El stock no puede ser negativo');
+    return;
+  }
+  if (!activeStoreId()) {
+    showToast('Selecciona una sucursal antes de guardar productos');
+    return;
+  }
   const id = els.productId.value;
   const payload = {
     store_id: activeStoreId(),
@@ -1020,7 +1070,16 @@ async function saveProduct(event) {
     await refreshAll();
     showToast('Producto guardado');
   } catch (error) {
-    showToast(error.message);
+    handleFormError(error, {
+      name: els.productName,
+      barcode: els.productBarcode,
+      sku: els.productSku,
+      sale_price: els.productSalePrice,
+      cost_price: els.productCostPrice,
+      stock: els.productStock,
+      min_stock: els.productMinStock,
+      image_data: els.productImageInput
+    });
   }
 }
 
@@ -1401,7 +1460,11 @@ async function api(path, options = {}) {
     ...options
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Error de solicitud');
+  if (!response.ok) {
+    const error = new Error(data.error || 'Error de solicitud');
+    error.field = data.field;
+    throw error;
+  }
   return data;
 }
 
@@ -1506,6 +1569,51 @@ function initials(value) {
 
 function csvCell(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`;
+}
+
+function clearFieldErrors(root = document) {
+  root.querySelectorAll?.('.field-error').forEach((field) => field.classList.remove('field-error'));
+}
+
+function requireField(input, message) {
+  if (String(input?.value || '').trim()) return true;
+  markFieldError(input, message);
+  return false;
+}
+
+function markFieldError(input, message) {
+  if (!input) {
+    showToast(message);
+    return;
+  }
+  input.classList.add('field-error');
+  input.focus?.();
+  input.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  showToast(message);
+}
+
+function handleFormError(error, fieldMap = {}) {
+  const input = fieldMap[error.field] || fieldMap[guessErrorField(error.message)];
+  if (input) {
+    markFieldError(input, error.message);
+    return;
+  }
+  showToast(error.message);
+}
+
+function guessErrorField(message = '') {
+  const text = message.toLowerCase();
+  if (text.includes('usuario')) return 'username';
+  if (text.includes('contrasena')) return 'password';
+  if (text.includes('sucursal')) return 'store_id';
+  if (text.includes('cliente')) return 'tenant_id';
+  if (text.includes('nombre')) return 'name';
+  if (text.includes('codigo') || text.includes('barra')) return 'barcode';
+  if (text.includes('sku')) return 'sku';
+  if (text.includes('precio')) return 'sale_price';
+  if (text.includes('stock')) return 'stock';
+  if (text.includes('imagen')) return 'image_data';
+  return '';
 }
 
 function shortId(value) {

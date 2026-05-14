@@ -237,8 +237,8 @@
             </div>
           </div>
           <form id="userForm" class="stack-form">
-            <label>Nombre completo<input id="userName" required placeholder="Nombre de la cajera"></label>
-            <label>Usuario<input id="userUsername" required autocomplete="off" placeholder="usuario"></label>
+            <label>Nombre completo<input id="userName" required placeholder="Ej. Juan Ivis"></label>
+            <label>Usuario<input id="userUsername" required autocomplete="off" placeholder="Ej. juanivis"></label>
             <label>Contrasena temporal<input id="userPassword" required type="password" autocomplete="new-password" placeholder="Minimo 4 caracteres"></label>
             <label>Sucursal<select id="userStore" required></select></label>
             <label>Rol<select id="userRole"><option value="cashier">Cajera</option><option value="editor">Editor</option><option value="branch_admin">Admin sucursal</option><option value="owner">Admin general</option></select></label>
@@ -309,22 +309,22 @@
           </div>
           <div>
         <div class="form-grid">
-          <label>Nombre<input id="productName" required></label>
+          <label>Nombre<input id="productName" required placeholder="Ej. Agua mineral 600 ml"></label>
           <label>Codigo de barras
             <div class="inline-input">
-              <input id="productBarcode" autocomplete="off">
+              <input id="productBarcode" autocomplete="off" placeholder="Escanea o escribe el codigo">
               <button id="focusBarcodeButton" class="secondary" type="button">Escanear</button>
             </div>
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>
-          <label>SKU<input id="productSku"></label>
-          <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required></label>
-          <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01"></label>
-          <label>Stock<input id="productStock" type="number" min="0" step="1" required></label>
-          <label>Stock minimo<input id="productMinStock" type="number" min="0" step="1"></label>
+          <label>SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>
+          <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required placeholder="Ej. 5.00"></label>
+          <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01" placeholder="Ej. 3.50"></label>
+          <label>Stock<input id="productStock" type="number" min="0" step="1" required placeholder="Ej. 24"></label>
+          <label>Stock minimo<input id="productMinStock" type="number" min="0" step="1" placeholder="Ej. 5"></label>
           <label class="checkbox"><input id="productActive" type="checkbox" checked> Activo</label>
         </div>
-        <label>Descripcion<textarea id="productDescription" rows="3"></textarea></label>
+        <label>Descripcion<textarea id="productDescription" rows="3" placeholder="Detalle opcional del producto"></textarea></label>
           </div>
         </div>
         <button class="primary" type="submit">Guardar producto</button>

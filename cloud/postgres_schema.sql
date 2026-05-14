@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS cloud_products (
   stock NUMERIC(12,2) NOT NULL DEFAULT 0,
   min_stock NUMERIC(12,2) NOT NULL DEFAULT 0,
   unit TEXT NOT NULL DEFAULT 'unidad',
+  description TEXT,
   image_data TEXT,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -128,6 +129,8 @@ CREATE TABLE IF NOT EXISTS cloud_sale_items (
   unit_price NUMERIC(12,2) NOT NULL,
   total NUMERIC(12,2) NOT NULL
 );
+
+ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS description TEXT;
 
 CREATE TABLE IF NOT EXISTS cloud_sale_audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
