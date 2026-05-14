@@ -60,7 +60,7 @@ function isPortAvailable(port) {
       .once('listening', () => {
         tester.close(() => resolve(true));
       })
-      .listen(port, '127.0.0.1');
+      .listen(port);
   });
 }
 

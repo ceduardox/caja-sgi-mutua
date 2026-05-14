@@ -60,7 +60,7 @@ server.on('error', (error) => {
   process.exit(1);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`SGI Market Caja local: http://localhost:${PORT}`);
   console.log(`Base local SQLite: ${DB_PATH}`);
 });
