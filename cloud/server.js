@@ -856,6 +856,8 @@ async function getReports(ctx, params) {
   const revenue = Number(totalRow.revenue || 0);
   const grossProfit = Number(totalRow.gross_profit || 0);
   return {
+    from,
+    to,
     range: { from, to },
     totals: {
       sales_count: totalRow.sales_count,

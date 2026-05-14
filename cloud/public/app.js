@@ -547,7 +547,7 @@ async function loadReports() {
   els.reportSalesList.innerHTML = data.sales.map((sale) => `
     <div class="table-row sales-report-row">
       <span>${formatDate(sale.created_at)}</span>
-      <span>${sale.id.slice(0, 8)}</span>
+      <span>${shortId(sale.id)}</span>
       <span>${paymentLabel(sale.payment_method)}${sale.status === 'void' ? ' / Anulada' : ''}</span>
       <strong>${money(sale.total)}</strong>
       <span>${renderSaleActions(sale)}</span>
@@ -579,7 +579,7 @@ async function handleSaleAction(event) {
 }
 
 async function voidSale(sale) {
-  const reason = window.prompt(`Motivo para anular la venta ${sale.id.slice(0, 8)}:`);
+  const reason = window.prompt(`Motivo para anular la venta ${shortId(sale.id)}:`);
   if (reason === null) return;
   if (!reason.trim()) throw new Error('El motivo de anulacion es obligatorio');
   if (!window.confirm(`Anular ${money(sale.total)} y devolver stock?`)) return;
@@ -1188,7 +1188,7 @@ function openImageViewer(src) {
 function showReceipt(sale) {
   els.receiptContent.innerHTML = `
     <h2>SGI Market Caja</h2>
-    <p><strong>Venta:</strong> ${sale.id.slice(0, 8)}</p>
+    <p><strong>Venta:</strong> ${shortId(sale.id)}</p>
     <p><strong>Fecha:</strong> ${formatDate(sale.created_at)}</p>
     <p><strong>Pago:</strong> ${paymentLabel(sale.payment_method)}</p>
     ${sale.items.map((item) => `
@@ -1493,6 +1493,11 @@ function initials(value) {
 
 function csvCell(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`;
+}
+
+function shortId(value) {
+  const text = String(value || '');
+  return text ? text.slice(0, 8) : 'sin-id';
 }
 
 function escapeHtml(value) {
