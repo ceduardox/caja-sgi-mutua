@@ -1389,15 +1389,16 @@ select {
   padding: 12px;
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1180px) {
   .layout {
     grid-template-columns: 1fr;
   }
 
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 18px;
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    padding: 18px 20px;
   }
 
   .brand {
@@ -1406,6 +1407,8 @@ select {
 
   .tabs {
     width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .status {
@@ -1452,6 +1455,263 @@ select {
 
   .camera-actions {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    background: var(--page);
+  }
+
+  .topbar {
+    gap: 14px;
+    padding: 18px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .brand {
+    gap: 12px;
+  }
+
+  .brand-mark {
+    width: 54px;
+    height: 54px;
+    flex: 0 0 auto;
+  }
+
+  .brand-mark.image-mark img {
+    width: 68px;
+    height: 68px;
+  }
+
+  .topbar h1 {
+    font-size: clamp(24px, 7vw, 32px);
+    line-height: 1.08;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(108px, 1fr));
+    overflow-x: auto;
+    border-radius: 12px;
+  }
+
+  .tab {
+    min-height: 54px;
+    padding: 0 12px;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  .status {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .active-store-control,
+  #currentUserLabel,
+  .logout-button {
+    grid-column: 1 / -1;
+  }
+
+  .active-store-control {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .active-store-control select {
+    min-width: 0;
+    height: 46px;
+    font-size: 14px;
+  }
+
+  .logout-button {
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .layout,
+  .page-view {
+    padding: 14px;
+  }
+
+  .panel {
+    padding: 18px;
+    border-radius: 12px;
+  }
+
+  .sale-panel {
+    min-height: auto;
+  }
+
+  .panel-header {
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .panel-header .actions,
+  .date-filters {
+    width: 100%;
+  }
+
+  .title-row {
+    min-width: 0;
+  }
+
+  .panel h2 {
+    font-size: 22px;
+    line-height: 1.12;
+  }
+
+  .section-icon {
+    width: 46px;
+    height: 46px;
+    flex: 0 0 auto;
+  }
+
+  .input-shell {
+    min-height: 58px;
+    padding: 0 14px;
+  }
+
+  #scanInput {
+    min-width: 0;
+    font-size: 15px;
+  }
+
+  .cart {
+    min-height: 300px;
+  }
+
+  .cart-head,
+  .cart-row {
+    grid-template-columns: minmax(0, 1fr) 70px 86px;
+    gap: 8px;
+  }
+
+  .totals {
+    padding: 16px;
+  }
+
+  .primary {
+    min-height: 58px;
+    font-size: 16px;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-grid div {
+    grid-template-columns: 54px 1fr;
+    min-height: 82px;
+  }
+
+  .summary-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .product-list,
+  .sales-list,
+  .data-list {
+    max-height: none;
+  }
+
+  .sale-row,
+  .data-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .sale-row > div {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sale-side,
+  .sale-actions {
+    justify-content: flex-start;
+  }
+
+  .manager-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .manager-row > div,
+  .manager-row > strong,
+  .manager-row > button {
+    grid-column: 2;
+  }
+
+  dialog {
+    width: min(94vw, 720px);
+    max-height: 92vh;
+  }
+
+  .product-editor,
+  .form-grid,
+  .payment-methods,
+  .dialog-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .chart {
+    min-height: 260px;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar {
+    padding: 16px 10px;
+  }
+
+  .tabs {
+    grid-template-columns: repeat(4, minmax(96px, 1fr));
+  }
+
+  .tab {
+    gap: 6px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .layout,
+  .page-view {
+    padding: 10px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .panel-header {
+    flex-direction: column;
+  }
+
+  .cart-head,
+  .cart-row {
+    grid-template-columns: minmax(0, 1fr) 58px 74px;
+    font-size: 12px;
+  }
+
+  .login-overlay {
+    padding: 126px 8px 18px;
+  }
+
+  .login-hero-brand {
+    left: 18px;
+    right: 12px;
+  }
+
+  .login-hero-brand h1 {
+    font-size: 28px;
+  }
+
+  .login-card {
+    padding: 24px 18px;
   }
 }
 
