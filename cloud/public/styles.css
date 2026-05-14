@@ -22,7 +22,7 @@
 
 body {
   margin: 0;
-  font-family: "Inter", "Segoe UI", Roboto, Arial, Helvetica, sans-serif;
+  font-family: "Plus Jakarta Sans", "Segoe UI", Roboto, Arial, Helvetica, sans-serif;
   background:
     radial-gradient(circle at 8% -8%, rgba(0, 188, 174, 0.12), transparent 32%),
     linear-gradient(180deg, #fbfdff 0, var(--page) 280px);
@@ -951,7 +951,7 @@ label {
   border-radius: 10px;
   background: #fff;
   color: #111827;
-  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  font-family: "Plus Jakarta Sans", "Segoe UI", Arial, sans-serif;
   font-size: 12px;
 }
 
