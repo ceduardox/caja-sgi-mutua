@@ -354,6 +354,13 @@ textarea {
   padding: 0;
   min-height: 58px;
   box-shadow: none;
+  outline: 0;
+  border-radius: 0;
+}
+
+.input-shell:focus-within {
+  border-color: rgba(0, 137, 125, 0.62);
+  box-shadow: 0 0 0 4px rgba(0, 137, 125, 0.10), 0 8px 22px rgba(15, 23, 42, 0.05);
 }
 
 .input-shell svg {

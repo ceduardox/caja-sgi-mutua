@@ -236,7 +236,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && url.pathname === '/api/sales') {
-    requireRole(ctx, ['tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
     const sale = await createOnlineSale(ctx, await readJson(req));
     sendJson(res, 201, { sale });
     return;
