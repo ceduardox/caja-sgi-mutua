@@ -78,6 +78,13 @@ const els = {
   receiptContent: document.querySelector('#receiptContent'),
   printReceiptButton: document.querySelector('#printReceiptButton'),
   closeReceiptButton: document.querySelector('#closeReceiptButton'),
+  editPasswordDialog: document.querySelector('#editPasswordDialog'),
+  editPasswordForm: document.querySelector('#editPasswordForm'),
+  editPasswordUserId: document.querySelector('#editPasswordUserId'),
+  editPasswordUserLabel: document.querySelector('#editPasswordUserLabel'),
+  editPasswordNew: document.querySelector('#editPasswordNew'),
+  editPasswordConfirm: document.querySelector('#editPasswordConfirm'),
+  closeEditPasswordDialog: document.querySelector('#closeEditPasswordDialog'),
   paymentDialog: document.querySelector('#paymentDialog'),
   paymentForm: document.querySelector('#paymentForm'),
   closePaymentDialog: document.querySelector('#closePaymentDialog'),
@@ -148,6 +155,7 @@ function bindEvents() {
   els.storeForm.addEventListener('submit', saveStore);
   els.storesList.addEventListener('click', handleStoreListClick);
   els.userForm.addEventListener('submit', saveUser);
+  els.usersList.addEventListener('click', handleUsersListClick);
   els.userRole.addEventListener('change', updateUserFormPermissions);
   els.activeStoreSelect.addEventListener('change', changeActiveStore);
   els.salesList.addEventListener('click', handleSaleAction);
@@ -202,6 +210,8 @@ function bindEvents() {
     els.receiptDialog.close();
     els.scanInput.focus();
   });
+  els.editPasswordForm.addEventListener('submit', saveEditedPassword);
+  els.closeEditPasswordDialog.addEventListener('click', () => els.editPasswordDialog.close());
   els.closeImageDialog.addEventListener('click', () => els.imageDialog.close());
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-image-view], [data-product-image]');
@@ -389,16 +399,71 @@ async function handleStoreListClick(event) {
 
 function renderUsers(users) {
   els.usersList.innerHTML = users.map((user) => `
-    <div class="data-row">
+    <div class="data-row user-row">
       <span class="row-icon"><i data-lucide="${isGlobalAdmin(user.role) || user.role === 'branch_admin' ? 'shield-check' : 'badge'}"></i></span>
       <div>
         <strong>${escapeHtml(user.name)}</strong>
         <div class="meta">${escapeHtml(user.username)} - ${roleLabel(user.role)} - ${escapeHtml(user.store_name || 'Todas las sucursales')}</div>
       </div>
-      <span class="pill">${user.active ? 'Activo' : 'Inactivo'}</span>
+      <div class="user-actions">
+        <span class="pill">${user.active ? 'Activo' : 'Inactivo'}</span>
+        ${canChangeUserPassword(user) ? `<button class="secondary mini-button" type="button" data-change-password="${user.id}"><i data-lucide="key-round"></i>Clave</button>` : ''}
+      </div>
     </div>
   `).join('') || '<div class="empty">Sin usuarios.</div>';
   renderIcons();
+}
+
+function handleUsersListClick(event) {
+  const button = event.target.closest('[data-change-password]');
+  if (!button) return;
+  openEditPasswordDialog(button.dataset.changePassword);
+}
+
+function openEditPasswordDialog(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) {
+    showToast('Usuario no encontrado. Actualiza la pagina e intenta de nuevo.');
+    return;
+  }
+  if (!canChangeUserPassword(user)) {
+    showToast('No tienes permiso para cambiar la contrasena de este usuario');
+    return;
+  }
+  clearFieldErrors(els.editPasswordForm);
+  els.editPasswordForm.reset();
+  els.editPasswordUserId.value = user.id;
+  els.editPasswordUserLabel.value = `${user.name} (${user.username})`;
+  els.editPasswordDialog.showModal();
+  setTimeout(() => els.editPasswordNew.focus(), 50);
+}
+
+async function saveEditedPassword(event) {
+  event.preventDefault();
+  clearFieldErrors(els.editPasswordForm);
+  const userId = els.editPasswordUserId.value;
+  if (!requireField(els.editPasswordNew, 'Escribe la nueva contrasena')) return;
+  if (els.editPasswordNew.value.trim().length < 4) {
+    markFieldError(els.editPasswordNew, 'La contrasena debe tener al menos 4 caracteres');
+    return;
+  }
+  if (!requireField(els.editPasswordConfirm, 'Confirma la nueva contrasena')) return;
+  if (els.editPasswordNew.value !== els.editPasswordConfirm.value) {
+    markFieldError(els.editPasswordConfirm, 'Las contrasenas no coinciden');
+    return;
+  }
+  try {
+    await api(`/api/users/${userId}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify({ password: els.editPasswordNew.value })
+    });
+    els.editPasswordDialog.close();
+    els.editPasswordForm.reset();
+    await loadAdminData();
+    showToast('Contrasena actualizada');
+  } catch (error) {
+    handleFormError(error, { password: els.editPasswordNew });
+  }
 }
 
 function updateUserFormPermissions() {
@@ -1559,6 +1624,17 @@ function canManageAdmin(role) {
 
 function canAdjustSales(role) {
   return isGlobalAdmin(role) || role === 'branch_admin';
+}
+
+function canChangeUserPassword(user) {
+  const role = state.user?.role;
+  if (!user || !role) return false;
+  if (role === 'master_admin') return user.role !== 'master_admin' || user.id === state.user.id;
+  if (role === 'tenant_owner') return user.tenant_id === state.user.tenant_id && user.role !== 'master_admin';
+  if (role === 'branch_admin') {
+    return user.store_id === state.user.store_id && ['editor', 'cashier'].includes(user.role);
+  }
+  return false;
 }
 
 function canAccessView(role, viewId) {

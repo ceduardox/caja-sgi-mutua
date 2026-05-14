@@ -656,6 +656,20 @@ textarea {
   padding: 0;
 }
 
+.user-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mini-button {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .row-icon {
   width: 46px;
   height: 46px;
@@ -1685,7 +1699,8 @@ select {
   }
 
   .sale-side,
-  .sale-actions {
+  .sale-actions,
+  .user-actions {
     justify-content: flex-start;
   }
 

@@ -339,6 +339,23 @@
       </div>
     </dialog>
 
+    <dialog id="editPasswordDialog">
+      <form id="editPasswordForm" method="dialog">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Usuario</p>
+            <h2>Cambiar contrasena</h2>
+          </div>
+          <button type="button" id="closeEditPasswordDialog" class="ghost">Cerrar</button>
+        </div>
+        <input type="hidden" id="editPasswordUserId">
+        <label>Usuario<input id="editPasswordUserLabel" readonly></label>
+        <label>Nueva contrasena<input id="editPasswordNew" required type="password" autocomplete="new-password" placeholder="Minimo 4 caracteres"></label>
+        <label>Confirmar contrasena<input id="editPasswordConfirm" required type="password" autocomplete="new-password" placeholder="Repite la nueva contrasena"></label>
+        <button class="primary" type="submit"><i data-lucide="key-round"></i>Guardar contrasena</button>
+      </form>
+    </dialog>
+
     <dialog id="paymentDialog">
       <form id="paymentForm" method="dialog">
         <div class="panel-header">
