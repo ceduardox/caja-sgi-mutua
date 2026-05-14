@@ -173,9 +173,17 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && url.pathname === '/api/stores') {
-    requireRole(ctx, ['admin', 'editor']);
+    requireRole(ctx, ['admin']);
     const store = createStore(await readJson(req));
     sendJson(res, 201, { store });
+    return;
+  }
+
+  const storeMatch = url.pathname.match(/^\/api\/stores\/([^/]+)$/);
+  if (storeMatch && method === 'PUT') {
+    requireRole(ctx, ['admin']);
+    const store = updateStore(storeMatch[1], await readJson(req));
+    sendJson(res, 200, { store });
     return;
   }
 
@@ -702,6 +710,18 @@ function createStore(input) {
     INSERT INTO categories (id, store_id, name)
     VALUES (?, ?, ?)
   `).run(randomUUID(), id, 'General');
+  return db.prepare('SELECT id, name, license_status, created_at, updated_at FROM stores WHERE id = ?').get(id);
+}
+
+function updateStore(id, input) {
+  const name = String(input.name || '').trim();
+  if (!name) throw new Error('El nombre de la sucursal es obligatorio');
+  const result = db.prepare(`
+    UPDATE stores
+    SET name = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(name, id);
+  if (result.changes === 0) throw new Error('Sucursal no encontrada');
   return db.prepare('SELECT id, name, license_status, created_at, updated_at FROM stores WHERE id = ?').get(id);
 }
 

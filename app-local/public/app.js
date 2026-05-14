@@ -134,6 +134,7 @@ function bindEvents() {
   });
   els.loginForm.addEventListener('submit', login);
   els.storeForm.addEventListener('submit', saveStore);
+  els.storesList.addEventListener('click', handleStoreListClick);
   els.userForm.addEventListener('submit', saveUser);
   els.scanInput.addEventListener('input', debounce(handleSearch, 140));
   els.scanInput.addEventListener('keydown', (event) => {
@@ -271,9 +272,33 @@ function renderStores(stores) {
         <strong>${escapeHtml(store.name)}</strong>
         <div class="meta">${store.license_status || 'trial'}</div>
       </div>
+      <button class="secondary" data-rename-store="${store.id}" data-store-name="${escapeHtml(store.name)}"><i data-lucide="pencil"></i>Renombrar</button>
     </div>
   `).join('') || '<div class="empty">Sin sucursales.</div>';
   renderIcons();
+}
+
+async function handleStoreListClick(event) {
+  const button = event.target.closest('[data-rename-store]');
+  if (!button) return;
+  const currentName = button.dataset.storeName || '';
+  const name = window.prompt('Nuevo nombre de la sucursal:', currentName);
+  if (name === null) return;
+  const cleanName = name.trim();
+  if (!cleanName) {
+    showToast('El nombre de la sucursal es obligatorio');
+    return;
+  }
+  try {
+    await api(`/api/stores/${button.dataset.renameStore}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: cleanName })
+    });
+    await loadAdminData();
+    showToast('Sucursal renombrada');
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function renderUsers(users) {
