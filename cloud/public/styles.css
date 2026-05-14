@@ -690,6 +690,13 @@ textarea {
   gap: 8px;
 }
 
+.filter-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 12px;
+  margin: 14px 0;
+}
+
 .manager-row {
   display: grid;
   grid-template-columns: auto minmax(220px, 1fr) 110px 120px 80px auto;
@@ -699,6 +706,43 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.permission-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.permission-card > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.permission-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permission-tags span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef8f6;
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .label {
@@ -1503,6 +1547,7 @@ select {
   .report-columns,
   .chart-grid,
   .product-editor,
+  .permission-grid,
   .report-grid {
     grid-template-columns: 1fr;
   }
@@ -1725,6 +1770,7 @@ select {
 
   .product-editor,
   .form-grid,
+  .filter-grid,
   .payment-methods,
   .dialog-actions {
     grid-template-columns: 1fr;

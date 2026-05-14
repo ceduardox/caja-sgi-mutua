@@ -138,6 +138,12 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/categories') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor']);
+    sendJson(res, 200, { categories: await listCategories(ctx, url.searchParams.get('store_id')) });
+    return;
+  }
+
   if (method === 'PUT' && url.pathname === '/api/active-store') {
     requireRole(ctx, ['master_admin', 'tenant_owner']);
     sendJson(res, 200, { store: await getActiveStore(ctx, (await readJson(req)).store_id) });
@@ -223,7 +229,7 @@ async function handleApi(req, res, url) {
 
   if (method === 'GET' && url.pathname === '/api/products') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
-    sendJson(res, 200, { products: await listProducts(ctx, url.searchParams.get('q'), url.searchParams.get('store_id')) });
+    sendJson(res, 200, { products: await listProducts(ctx, url.searchParams) });
     return;
   }
 
@@ -474,6 +480,17 @@ async function getActiveStore(ctx, requestedStoreId) {
   return result.rows[0];
 }
 
+async function listCategories(ctx, requestedStoreId) {
+  const storeId = await resolveStoreId(ctx, requestedStoreId);
+  const result = await pool.query(`
+    SELECT id, store_id, name, created_at
+    FROM cloud_categories
+    WHERE store_id = $1
+    ORDER BY lower(name) ASC
+  `, [storeId]);
+  return result.rows;
+}
+
 async function listUsers(ctx) {
   const result = await pool.query(`
     SELECT u.id, u.tenant_id, u.store_id, t.business_name, s.name AS store_name,
@@ -588,19 +605,42 @@ async function getSaleDetails(ctx, id) {
   return { ...sale, items: items.rows };
 }
 
-async function listProducts(ctx, query, requestedStoreId) {
+async function listProducts(ctx, searchParams) {
   const values = [];
   let where = 'WHERE p.active = TRUE';
+  const requestedStoreId = searchParams.get('store_id');
   if (!(ctx.user.role === 'master_admin' && !cleanOptional(requestedStoreId))) {
     const storeId = await resolveStoreId(ctx, requestedStoreId);
     values.push(storeId);
     where += ` AND p.store_id = $${values.length}`;
   }
-  const q = cleanOptional(query);
+  const status = cleanOptional(searchParams.get('status')) || 'active';
+  if (status === 'inactive') {
+    where = where.replace('WHERE p.active = TRUE', 'WHERE p.active = FALSE');
+  } else if (status === 'all') {
+    where = where.replace('WHERE p.active = TRUE', 'WHERE TRUE');
+  }
+  const categoryId = cleanOptional(searchParams.get('category_id'));
+  if (categoryId) {
+    values.push(categoryId);
+    where += ` AND p.category_id = $${values.length}`;
+  }
+  const stock = cleanOptional(searchParams.get('stock'));
+  if (stock === 'low') {
+    where += ' AND p.stock <= p.min_stock';
+  } else if (stock === 'out') {
+    where += ' AND p.stock <= 0';
+  } else if (stock === 'available') {
+    where += ' AND p.stock > 0';
+  }
+  const q = cleanOptional(searchParams.get('q'));
   if (q) {
     values.push(`%${q.toLowerCase()}%`);
     where += ` AND (
-      lower(p.name) LIKE $${values.length} OR lower(COALESCE(p.barcode, '')) LIKE $${values.length} OR lower(COALESCE(p.sku, '')) LIKE $${values.length}
+      lower(p.name) LIKE $${values.length}
+      OR lower(COALESCE(p.barcode, '')) LIKE $${values.length}
+      OR lower(COALESCE(p.sku, '')) LIKE $${values.length}
+      OR lower(COALESCE(c.name, '')) LIKE $${values.length}
     )`;
   }
   const result = await pool.query(`
@@ -619,29 +659,31 @@ async function listProducts(ctx, query, requestedStoreId) {
 async function createProduct(ctx, input) {
   const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
   const product = normalizeProductInput(input);
+  product.category_id = await resolveCategoryId(storeId, product.category_id, product.category_name);
   await assertUniqueProductCodes(storeId, product);
   const result = await pool.query(`
     INSERT INTO cloud_products (
-      store_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, description, image_data, active
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-    RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
+      store_id, category_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, description, image_data, active
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    RETURNING id, store_id, category_id, barcode, sku, name, cost_price::float, sale_price::float,
       stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
-  `, [storeId, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active]);
+  `, [storeId, product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active]);
   return result.rows[0];
 }
 
 async function updateProduct(ctx, id, input) {
   const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
   const product = normalizeProductInput(input);
+  product.category_id = await resolveCategoryId(storeId, product.category_id, product.category_name);
   await assertUniqueProductCodes(storeId, product, id);
   const result = await pool.query(`
     UPDATE cloud_products
-    SET barcode = $1, sku = $2, name = $3, cost_price = $4, sale_price = $5,
-      stock = $6, min_stock = $7, unit = $8, description = $9, image_data = $10, active = $11, updated_at = now()
-    WHERE id = $12 AND store_id = $13
-    RETURNING id, store_id, barcode, sku, name, cost_price::float, sale_price::float,
+    SET category_id = $1, barcode = $2, sku = $3, name = $4, cost_price = $5, sale_price = $6,
+      stock = $7, min_stock = $8, unit = $9, description = $10, image_data = $11, active = $12, updated_at = now()
+    WHERE id = $13 AND store_id = $14
+    RETURNING id, store_id, category_id, barcode, sku, name, cost_price::float, sale_price::float,
       stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
-  `, [product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, id, storeId]);
+  `, [product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, id, storeId]);
   if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
   return result.rows[0];
 }
@@ -1138,6 +1180,8 @@ function normalizeProductInput(input) {
   if (stock < 0) throw new HttpError(400, 'El stock no puede ser negativo', 'stock');
   if (minStock < 0) throw new HttpError(400, 'El stock minimo no puede ser negativo', 'min_stock');
   return {
+    category_id: cleanOptional(input.category_id || input.categoryId),
+    category_name: cleanOptional(input.category_name || input.categoryName),
     barcode: cleanOptional(input.barcode),
     sku: cleanOptional(input.sku),
     name: cleanRequired(input.name, 'Nombre'),
@@ -1150,6 +1194,23 @@ function normalizeProductInput(input) {
     image_data: image,
     active: input.active === undefined ? true : Boolean(input.active)
   };
+}
+
+async function resolveCategoryId(storeId, categoryId, categoryName) {
+  if (categoryId) {
+    const existing = await pool.query('SELECT id FROM cloud_categories WHERE id = $1 AND store_id = $2', [categoryId, storeId]);
+    if (existing.rowCount === 0) throw new HttpError(400, 'Categoria no valida', 'category_id');
+    return categoryId;
+  }
+  const name = cleanOptional(categoryName);
+  if (!name) return null;
+  const result = await pool.query(`
+    INSERT INTO cloud_categories (store_id, name)
+    VALUES ($1, $2)
+    ON CONFLICT (store_id, name) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id
+  `, [storeId, name]);
+  return result.rows[0].id;
 }
 
 async function assertUniqueProductCodes(storeId, product, exceptId = null) {

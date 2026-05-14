@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS cloud_sale_items (
 );
 
 ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES cloud_categories(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS cloud_sale_audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

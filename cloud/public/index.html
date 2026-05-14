@@ -137,6 +137,11 @@
           <span>Buscar producto</span>
           <input id="productSearchInput" autocomplete="off" placeholder="Nombre, codigo de barras o SKU">
         </label>
+        <div class="filter-grid">
+          <label>Categoria<select id="productCategoryFilter"><option value="">Todas</option></select></label>
+          <label>Stock<select id="productStockFilter"><option value="">Todos</option><option value="available">Con stock</option><option value="low">Stock bajo</option><option value="out">Agotados</option></select></label>
+          <label>Estado<select id="productStatusFilter"><option value="all">Todos</option><option value="active">Activos</option><option value="inactive">Inactivos</option></select></label>
+        </div>
         <div id="productManagerList" class="manager-list"></div>
       </section>
     </main>
@@ -214,6 +219,16 @@
     </main>
 
     <main id="adminView" class="view page-view">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow with-icon"><i data-lucide="shield-check"></i>Permisos</p>
+            <h2>Permisos por rol</h2>
+          </div>
+        </div>
+        <div id="rolePermissionsList" class="permission-grid"></div>
+      </section>
+
       <section class="report-columns">
         <div class="panel">
           <div class="panel-header">
@@ -318,6 +333,7 @@
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>
           <label>SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>
+          <label>Categoria<input id="productCategoryName" list="productCategoryOptions" placeholder="Ej. Bebidas"></label>
           <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required placeholder="Ej. 5.00"></label>
           <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01" placeholder="Ej. 3.50"></label>
           <label>Stock<input id="productStock" type="number" min="0" step="1" required placeholder="Ej. 24"></label>
@@ -325,6 +341,7 @@
           <label class="checkbox"><input id="productActive" type="checkbox" checked> Activo</label>
         </div>
         <label>Descripcion<textarea id="productDescription" rows="3" placeholder="Detalle opcional del producto"></textarea></label>
+        <datalist id="productCategoryOptions"></datalist>
           </div>
         </div>
         <button class="primary" type="submit">Guardar producto</button>

@@ -1,5 +1,6 @@
 const state = {
   products: [],
+  categories: [],
   stores: [],
   users: [],
   sales: [],
@@ -22,6 +23,9 @@ const els = {
   productList: document.querySelector('#productList'),
   productManagerList: document.querySelector('#productManagerList'),
   productSearchInput: document.querySelector('#productSearchInput'),
+  productCategoryFilter: document.querySelector('#productCategoryFilter'),
+  productStockFilter: document.querySelector('#productStockFilter'),
+  productStatusFilter: document.querySelector('#productStatusFilter'),
   salesList: document.querySelector('#salesList'),
   todayTotal: document.querySelector('#todayTotal'),
   todayCount: document.querySelector('#todayCount'),
@@ -50,6 +54,7 @@ const els = {
   userStore: document.querySelector('#userStore'),
   userRole: document.querySelector('#userRole'),
   usersList: document.querySelector('#usersList'),
+  rolePermissionsList: document.querySelector('#rolePermissionsList'),
   productDialog: document.querySelector('#productDialog'),
   productForm: document.querySelector('#productForm'),
   productDialogTitle: document.querySelector('#productDialogTitle'),
@@ -64,6 +69,8 @@ const els = {
   productBarcode: document.querySelector('#productBarcode'),
   barcodeScanHint: document.querySelector('#barcodeScanHint'),
   productSku: document.querySelector('#productSku'),
+  productCategoryName: document.querySelector('#productCategoryName'),
+  productCategoryOptions: document.querySelector('#productCategoryOptions'),
   productSalePrice: document.querySelector('#productSalePrice'),
   productCostPrice: document.querySelector('#productCostPrice'),
   productStock: document.querySelector('#productStock'),
@@ -167,7 +174,10 @@ function bindEvents() {
       addScannedProduct();
     }
   });
-  els.productSearchInput.addEventListener('input', debounce(() => loadProducts(els.productSearchInput.value.trim()), 180));
+  els.productSearchInput.addEventListener('input', debounce(() => loadProducts(els.productSearchInput.value.trim(), { manager: true }), 180));
+  [els.productCategoryFilter, els.productStockFilter, els.productStatusFilter].forEach((input) => {
+    input.addEventListener('change', () => loadProducts(els.productSearchInput.value.trim(), { manager: true }));
+  });
   els.checkoutButton.addEventListener('click', openPaymentDialog);
   els.paymentForm.addEventListener('submit', checkout);
   els.closePaymentDialog.addEventListener('click', () => els.paymentDialog.close());
@@ -235,7 +245,7 @@ function bindEvents() {
 
 async function refreshAll() {
   if (canManageAdmin(state.user?.role)) await loadAdminData();
-  const tasks = [loadProducts(), checkHealth()];
+  const tasks = [loadCategories(), loadProducts('', { manager: state.user?.role === 'editor' }), checkHealth()];
   if (canSell(state.user?.role)) tasks.push(refreshSummary(), loadSales());
   if (canViewReports(state.user?.role)) tasks.push(loadReports());
   await Promise.all(tasks);
@@ -335,6 +345,7 @@ async function loadAdminData() {
   state.users = usersData.users || [];
   renderStores(state.stores);
   renderUsers(state.users);
+  renderRolePermissions();
   updateUserFormPermissions();
 }
 
@@ -371,7 +382,7 @@ async function changeActiveStore() {
     els.activeStoreSelect.dataset.currentStore = data.store.id;
     state.cart.clear();
     renderCart();
-    await Promise.all([loadProducts(), refreshSummary(), loadSales(), loadReports()]);
+    await Promise.all([loadCategories(), loadProducts('', { manager: document.querySelector('#productsView')?.classList.contains('active') }), refreshSummary(), loadSales(), loadReports()]);
     showToast(`Sucursal activa: ${data.store.name}`);
   } catch (error) {
     showToast(error.message);
@@ -415,6 +426,29 @@ function renderUsers(users) {
       </div>
     </div>
   `).join('') || '<div class="empty">Sin usuarios.</div>';
+  renderIcons();
+}
+
+function renderRolePermissions() {
+  if (!els.rolePermissionsList) return;
+  const permissions = [
+    { role: 'master_admin', name: 'Admin maestro', items: ['Todas las sucursales', 'Vender', 'Reportes', 'Productos', 'Usuarios', 'Correcciones'] },
+    { role: 'tenant_owner', name: 'Admin general', items: ['Su negocio', 'Vender', 'Reportes', 'Productos', 'Usuarios', 'Correcciones'] },
+    { role: 'branch_admin', name: 'Admin sucursal', items: ['Su sucursal', 'Vender', 'Reportes', 'Productos', 'Cajeras/Editores', 'Correcciones'] },
+    { role: 'editor', name: 'Editor', items: ['Solo productos', 'Crear productos', 'Editar productos', 'Imagenes', 'Categorias'] },
+    { role: 'cashier', name: 'Cajera', items: ['Solo caja', 'Vender', 'Imprimir recibos', 'Buscar productos'] }
+  ];
+  els.rolePermissionsList.innerHTML = permissions.map((role) => `
+    <div class="permission-card">
+      <div>
+        <span class="row-icon"><i data-lucide="${role.role === 'cashier' ? 'badge' : role.role === 'editor' ? 'package' : 'shield-check'}"></i></span>
+        <strong>${role.name}</strong>
+      </div>
+      <div class="permission-tags">
+        ${role.items.map((item) => `<span>${item}</span>`).join('')}
+      </div>
+    </div>
+  `).join('');
   renderIcons();
 }
 
@@ -568,8 +602,12 @@ function showView(viewId) {
   els.views.forEach((view) => view.classList.toggle('active', view.id === viewId));
   if (viewId === 'productsView') {
     document.querySelector('.tab[data-view="productsView"]')?.classList.remove('attention');
+    loadProducts(els.productSearchInput.value.trim(), { manager: true }).catch((error) => showToast(error.message));
   }
-  if (viewId === 'posView') els.scanInput.focus();
+  if (viewId === 'posView') {
+    loadProducts('', { manager: false }).catch((error) => showToast(error.message));
+    els.scanInput.focus();
+  }
   if (viewId === 'productsView') els.productSearchInput.focus();
   if (viewId === 'reportsView') {
     loadReports().then(() => window.setTimeout(resizeCharts, 80));
@@ -587,11 +625,36 @@ async function checkHealth() {
   }
 }
 
-async function loadProducts(query = '') {
+async function loadCategories() {
+  if (state.user?.role === 'cashier') return;
+  const params = new URLSearchParams();
+  const storeId = activeStoreId();
+  if (storeId) params.set('store_id', storeId);
+  const data = await api(`/api/categories${params.toString() ? `?${params}` : ''}`);
+  state.categories = data.categories || [];
+  renderCategoryControls();
+}
+
+function renderCategoryControls() {
+  const selected = els.productCategoryFilter.value;
+  const options = state.categories.map((category) => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join('');
+  els.productCategoryFilter.innerHTML = `<option value="">Todas</option>${options}`;
+  if (state.categories.some((category) => category.id === selected)) els.productCategoryFilter.value = selected;
+  els.productCategoryOptions.innerHTML = state.categories.map((category) => `<option value="${escapeHtml(category.name)}"></option>`).join('');
+}
+
+async function loadProducts(query = '', options = {}) {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   const storeId = activeStoreId();
   if (storeId) params.set('store_id', storeId);
+  if (options.manager) {
+    params.set('status', els.productStatusFilter.value || 'all');
+    if (els.productCategoryFilter.value) params.set('category_id', els.productCategoryFilter.value);
+    if (els.productStockFilter.value) params.set('stock', els.productStockFilter.value);
+  } else {
+    params.set('status', 'active');
+  }
   const data = await api(`/api/products${params.toString() ? `?${params}` : ''}`);
   state.products = data.products;
   renderProducts();
@@ -835,7 +898,7 @@ function renderProducts() {
         ${productThumb(product)}
         <div>
           <strong>${escapeHtml(product.name)}</strong>
-          <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - ${money(product.sale_price)}</div>
+          <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - ${escapeHtml(product.category_name || 'Sin categoria')} - ${money(product.sale_price)}</div>
           <div class="meta ${low ? 'stock-low' : ''}">Stock ${product.stock} / minimo ${product.min_stock}</div>
         </div>
         <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
@@ -858,7 +921,7 @@ function renderProductManager() {
         ${productThumb(product)}
         <div>
           <strong>${escapeHtml(product.name)}</strong>
-          <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')}</div>
+          <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - ${escapeHtml(product.category_name || 'Sin categoria')}${product.active ? '' : ' - Inactivo'}</div>
         </div>
         <div><span class="label">Precio</span><strong>${money(product.sale_price)}</strong></div>
         <div><span class="label">Ganancia/u</span><strong>${money(profit)}</strong></div>
@@ -1028,6 +1091,7 @@ function openProductDialog(product = null, options = {}) {
   els.productName.value = product?.name || '';
   els.productBarcode.value = product?.barcode || '';
   els.productSku.value = product?.sku || '';
+  els.productCategoryName.value = product?.category_name || '';
   els.productSalePrice.value = product?.sale_price ?? '';
   els.productCostPrice.value = product?.cost_price ?? '';
   els.productStock.value = product?.stock ?? 0;
@@ -1143,6 +1207,7 @@ async function saveProduct(event) {
     name: els.productName.value,
     barcode: els.productBarcode.value,
     sku: els.productSku.value,
+    category_name: els.productCategoryName.value,
     sale_price: Number(els.productSalePrice.value),
     cost_price: Number(els.productCostPrice.value || 0),
     stock: Number.parseInt(els.productStock.value, 10),
@@ -1165,6 +1230,8 @@ async function saveProduct(event) {
       name: els.productName,
       barcode: els.productBarcode,
       sku: els.productSku,
+      category_id: els.productCategoryName,
+      category_name: els.productCategoryName,
       sale_price: els.productSalePrice,
       cost_price: els.productCostPrice,
       stock: els.productStock,
@@ -1678,7 +1745,8 @@ function focusDefaultView() {
 }
 
 function activeStoreId() {
-  return els.activeStoreSelect?.value || state.activeStore?.id || state.user?.store_id || '';
+  if (isGlobalAdmin(state.user?.role)) return els.activeStoreSelect?.value || state.activeStore?.id || '';
+  return state.user?.store_id || state.activeStore?.id || '';
 }
 
 function parseNumber(value) {
