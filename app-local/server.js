@@ -57,7 +57,7 @@ function seedLocalData() {
   db.prepare(`
     INSERT OR IGNORE INTO stores (id, name, license_status)
     VALUES (?, ?, ?)
-  `).run(DEFAULT_STORE_ID, 'Mutualista', 'trial');
+  `).run(DEFAULT_STORE_ID, 'Sucursal Principal', 'trial');
 
   db.prepare(`
     INSERT OR IGNORE INTO devices (id, store_id, name)
