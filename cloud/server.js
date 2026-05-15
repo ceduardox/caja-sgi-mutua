@@ -196,6 +196,14 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const userMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
+  if (userMatch && method === 'PATCH') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
+    const user = await updateUser(ctx, userMatch[1], await readJson(req));
+    sendJson(res, 200, { user });
+    return;
+  }
+
   const userPasswordMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/password$/);
   if (userPasswordMatch && method === 'PATCH') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin']);
@@ -623,6 +631,78 @@ async function createUser(ctx, input) {
     RETURNING id, tenant_id, store_id, name, username, email, role, active, created_at
   `, [tenantId, storeId, name, username, email, hashPassword(password), role]);
   return result.rows[0];
+}
+
+async function updateUser(ctx, id, input) {
+  const target = await getEditableUser(ctx, id);
+  const name = cleanRequired(input.name, 'Nombre');
+  const email = input.email === undefined ? target.email : cleanOptional(input.email);
+  let role = cleanRequired(input.role, 'Rol');
+  let storeId = cleanOptional(input.store_id || input.storeId);
+  const active = input.active === undefined ? target.active : Boolean(input.active);
+  let tenantId = target.tenant_id;
+
+  if (!['tenant_owner', 'branch_admin', 'editor', 'cashier'].includes(role)) {
+    throw new HttpError(400, 'Rol invalido', 'role');
+  }
+  if (ctx.user.role === 'master_admin') {
+    if (target.role === 'master_admin') throw new HttpError(403, 'No puedes cambiar el rol de otro admin maestro');
+    if (role === 'tenant_owner') storeId = null;
+  }
+  if (ctx.user.role === 'tenant_owner') {
+    tenantId = ctx.user.tenant_id;
+    if (!['branch_admin', 'editor', 'cashier'].includes(role)) throw new HttpError(403, 'Rol no permitido', 'role');
+  }
+  if (ctx.user.role === 'branch_admin') {
+    tenantId = ctx.user.tenant_id;
+    storeId = ctx.user.store_id;
+    if (!['editor', 'cashier'].includes(role)) throw new HttpError(403, 'Rol no permitido', 'role');
+  }
+  if (role !== 'tenant_owner' && !storeId) throw new HttpError(400, 'Sucursal requerida', 'store_id');
+  if (role !== 'tenant_owner') await assertStoreInTenant(storeId, tenantId);
+
+  const result = await pool.query(`
+    UPDATE cloud_users
+    SET name = $1, email = $2, role = $3, store_id = $4, active = $5, updated_at = now()
+    WHERE id = $6
+    RETURNING id, tenant_id, store_id, name, username, email, role, active, updated_at
+  `, [name, email, role, role === 'tenant_owner' ? null : storeId, active, id]);
+  if (result.rowCount === 0) throw new HttpError(404, 'Usuario no encontrado');
+  return result.rows[0];
+}
+
+async function getEditableUser(ctx, id) {
+  const result = await pool.query(`
+    SELECT id, tenant_id, store_id, name, username, email, role, active
+    FROM cloud_users
+    WHERE id = $1
+    LIMIT 1
+  `, [id]);
+  if (result.rowCount === 0) throw new HttpError(404, 'Usuario no encontrado');
+  const user = result.rows[0];
+  if (ctx.user.role === 'master_admin') {
+    if (user.role === 'master_admin' && user.id !== ctx.user.id) throw new HttpError(403, 'No puedes editar otro admin maestro');
+    if (user.role === 'master_admin') throw new HttpError(403, 'No puedes cambiar tu rol desde aqui');
+    return user;
+  }
+  if (ctx.user.role === 'tenant_owner') {
+    if (user.tenant_id !== ctx.user.tenant_id || user.role === 'master_admin' || user.role === 'tenant_owner') {
+      throw new HttpError(403, 'No tienes permiso para editar este usuario');
+    }
+    return user;
+  }
+  if (ctx.user.role === 'branch_admin') {
+    if (user.store_id !== ctx.user.store_id || !['editor', 'cashier'].includes(user.role)) {
+      throw new HttpError(403, 'No tienes permiso para editar este usuario');
+    }
+    return user;
+  }
+  throw new HttpError(403, 'No tienes permiso');
+}
+
+async function assertStoreInTenant(storeId, tenantId) {
+  const result = await pool.query('SELECT id FROM stores WHERE id = $1 AND tenant_id = $2 AND active = TRUE', [storeId, tenantId]);
+  if (result.rowCount === 0) throw new HttpError(403, 'Sucursal fuera del negocio', 'store_id');
 }
 
 async function updateUserPassword(ctx, id, input) {

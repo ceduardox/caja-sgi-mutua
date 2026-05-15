@@ -149,6 +149,15 @@ const els = {
   editPasswordNew: document.querySelector('#editPasswordNew'),
   editPasswordConfirm: document.querySelector('#editPasswordConfirm'),
   closeEditPasswordDialog: document.querySelector('#closeEditPasswordDialog'),
+  editUserDialog: document.querySelector('#editUserDialog'),
+  editUserForm: document.querySelector('#editUserForm'),
+  editUserId: document.querySelector('#editUserId'),
+  editUserName: document.querySelector('#editUserName'),
+  editUserUsername: document.querySelector('#editUserUsername'),
+  editUserStore: document.querySelector('#editUserStore'),
+  editUserRole: document.querySelector('#editUserRole'),
+  editUserActive: document.querySelector('#editUserActive'),
+  closeEditUserDialog: document.querySelector('#closeEditUserDialog'),
   paymentDialog: document.querySelector('#paymentDialog'),
   paymentForm: document.querySelector('#paymentForm'),
   closePaymentDialog: document.querySelector('#closePaymentDialog'),
@@ -328,6 +337,9 @@ function bindEvents() {
   });
   els.editPasswordForm.addEventListener('submit', saveEditedPassword);
   els.closeEditPasswordDialog.addEventListener('click', () => els.editPasswordDialog.close());
+  els.editUserForm.addEventListener('submit', saveEditedUser);
+  els.editUserRole.addEventListener('change', updateEditUserStoreRequirement);
+  els.closeEditUserDialog.addEventListener('click', () => els.editUserDialog.close());
   els.closeImageDialog.addEventListener('click', () => els.imageDialog.close());
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-image-view], [data-product-image]');
@@ -580,6 +592,7 @@ function renderUsers(users) {
       </div>
       <div class="user-actions">
         <span class="pill">${user.active ? 'Activo' : 'Inactivo'}</span>
+        ${canEditUser(user) ? `<button class="secondary mini-button" type="button" data-edit-user="${user.id}"><i data-lucide="pencil"></i>Editar</button>` : ''}
         ${canChangeUserPassword(user) ? `<button class="secondary mini-button" type="button" data-change-password="${user.id}"><i data-lucide="key-round"></i>Clave</button>` : ''}
       </div>
     </div>
@@ -611,9 +624,115 @@ function renderRolePermissions() {
 }
 
 function handleUsersListClick(event) {
-  const button = event.target.closest('[data-change-password]');
-  if (!button) return;
-  openEditPasswordDialog(button.dataset.changePassword);
+  const editButton = event.target.closest('[data-edit-user]');
+  if (editButton) {
+    openEditUserDialog(editButton.dataset.editUser);
+    return;
+  }
+  const passwordButton = event.target.closest('[data-change-password]');
+  if (!passwordButton) return;
+  openEditPasswordDialog(passwordButton.dataset.changePassword);
+}
+
+function openEditUserDialog(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) {
+    showToast('Usuario no encontrado. Actualiza la pagina e intenta de nuevo.');
+    return;
+  }
+  if (!canEditUser(user)) {
+    showToast('No tienes permiso para editar este usuario');
+    return;
+  }
+  clearFieldErrors(els.editUserForm);
+  els.editUserForm.reset();
+  els.editUserId.value = user.id;
+  els.editUserName.value = user.name || '';
+  els.editUserUsername.value = user.username || '';
+  els.editUserActive.checked = Boolean(user.active);
+  renderEditUserStores(user);
+  renderEditUserRoles(user);
+  updateEditUserStoreRequirement();
+  els.editUserDialog.showModal();
+  setTimeout(() => els.editUserName.focus(), 50);
+}
+
+function renderEditUserStores(user) {
+  const stores = state.stores.filter((store) => {
+    if (state.user?.role === 'master_admin') return store.tenant_id === user.tenant_id;
+    if (state.user?.role === 'tenant_owner') return store.tenant_id === state.user.tenant_id;
+    return store.id === state.user?.store_id;
+  });
+  els.editUserStore.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
+  if (user.store_id && stores.some((store) => store.id === user.store_id)) {
+    els.editUserStore.value = user.store_id;
+  }
+}
+
+function renderEditUserRoles(user) {
+  const options = editableRoleOptions(user);
+  els.editUserRole.innerHTML = options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+  els.editUserRole.value = options.some(([value]) => value === user.role) ? user.role : options[0][0];
+}
+
+function editableRoleOptions(user) {
+  if (state.user?.role === 'master_admin') {
+    return [
+      ['cashier', 'Cajera'],
+      ['editor', 'Editor'],
+      ['branch_admin', 'Admin sucursal'],
+      ['tenant_owner', 'Dueno tienda']
+    ];
+  }
+  if (state.user?.role === 'tenant_owner') {
+    return [
+      ['cashier', 'Cajera'],
+      ['editor', 'Editor'],
+      ['branch_admin', 'Admin sucursal']
+    ];
+  }
+  if (state.user?.role === 'branch_admin' && ['editor', 'cashier'].includes(user.role)) {
+    return [
+      ['cashier', 'Cajera'],
+      ['editor', 'Editor']
+    ];
+  }
+  return [[user.role, roleLabel(user.role)]];
+}
+
+function updateEditUserStoreRequirement() {
+  const ownerTarget = els.editUserRole.value === 'tenant_owner';
+  els.editUserStore.disabled = ownerTarget;
+  els.editUserStore.required = !ownerTarget;
+}
+
+async function saveEditedUser(event) {
+  event.preventDefault();
+  clearFieldErrors(els.editUserForm);
+  const userId = els.editUserId.value;
+  const role = els.editUserRole.value;
+  if (!requireField(els.editUserName, 'Escribe el nombre del usuario')) return;
+  if (role !== 'tenant_owner' && !requireField(els.editUserStore, 'Selecciona la sucursal del usuario')) return;
+  try {
+    await api(`/api/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: els.editUserName.value,
+        role,
+        store_id: role === 'tenant_owner' ? null : els.editUserStore.value,
+        active: els.editUserActive.checked
+      })
+    });
+    els.editUserDialog.close();
+    await loadAdminData();
+    showToast('Usuario actualizado');
+  } catch (error) {
+    handleFormError(error, {
+      name: els.editUserName,
+      role: els.editUserRole,
+      store_id: els.editUserStore
+    });
+  }
 }
 
 function openEditPasswordDialog(userId) {
@@ -2461,6 +2580,19 @@ function canChangeUserPassword(user) {
   if (!user || !role) return false;
   if (role === 'master_admin') return user.role !== 'master_admin' || user.id === state.user.id;
   if (role === 'tenant_owner') return user.tenant_id === state.user.tenant_id && user.role !== 'master_admin';
+  if (role === 'branch_admin') {
+    return user.store_id === state.user.store_id && ['editor', 'cashier'].includes(user.role);
+  }
+  return false;
+}
+
+function canEditUser(user) {
+  const role = state.user?.role;
+  if (!user || !role) return false;
+  if (role === 'master_admin') return user.role !== 'master_admin';
+  if (role === 'tenant_owner') {
+    return user.tenant_id === state.user.tenant_id && !['master_admin', 'tenant_owner'].includes(user.role);
+  }
   if (role === 'branch_admin') {
     return user.store_id === state.user.store_id && ['editor', 'cashier'].includes(user.role);
   }

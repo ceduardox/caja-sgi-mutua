@@ -428,6 +428,25 @@
       </form>
     </dialog>
 
+    <dialog id="editUserDialog">
+      <form id="editUserForm" method="dialog">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Usuario</p>
+            <h2>Editar usuario</h2>
+          </div>
+          <button type="button" id="closeEditUserDialog" class="ghost">Cerrar</button>
+        </div>
+        <input type="hidden" id="editUserId">
+        <label>Nombre completo<input id="editUserName" required></label>
+        <label>Usuario<input id="editUserUsername" readonly></label>
+        <label>Sucursal<select id="editUserStore" required></select></label>
+        <label>Rol<select id="editUserRole" required></select></label>
+        <label class="checkbox"><input id="editUserActive" type="checkbox"> Activo</label>
+        <button class="primary" type="submit"><i data-lucide="save"></i>Guardar cambios</button>
+      </form>
+    </dialog>
+
     <dialog id="paymentDialog">
       <form id="paymentForm" method="dialog">
         <div class="panel-header">
