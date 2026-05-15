@@ -48,6 +48,8 @@ const DEFAULT_CATEGORY_NAMES = [
   'Desechables'
 ];
 
+const ACTIVE_VIEW_KEY = 'sgi_market_active_view';
+
 const els = {
   tabs: document.querySelectorAll('.tab'),
   views: document.querySelectorAll('.view'),
@@ -355,7 +357,7 @@ async function initializeSession() {
     const data = await api('/api/session');
     applySession(data.user, data.store);
     await refreshAll();
-    focusDefaultView();
+    restoreSavedView();
   } catch {
     els.loginOverlay.classList.add('active');
     renderIcons();
@@ -380,7 +382,7 @@ async function login(event) {
     setLoginMessage('', 'info');
     els.loginOverlay.classList.remove('active');
     await refreshAll();
-    focusDefaultView();
+    restoreSavedView();
   } catch (error) {
     setLoginMessage(error.message, 'error');
     showToast(error.message);
@@ -730,6 +732,7 @@ function showView(viewId) {
     showToast('No tienes permiso para abrir este modulo');
     viewId = defaultViewForRole(state.user?.role);
   }
+  saveActiveView(viewId);
   els.tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.view === viewId));
   els.views.forEach((view) => view.classList.toggle('active', view.id === viewId));
   if (viewId === 'productsView') {
@@ -746,6 +749,24 @@ function showView(viewId) {
     loadCashShifts().catch((error) => showToast(error.message));
     loadStockMovements().catch((error) => showToast(error.message));
   }
+}
+
+function saveActiveView(viewId) {
+  try {
+    window.localStorage.setItem(ACTIVE_VIEW_KEY, viewId);
+  } catch {
+    // Si el navegador bloquea localStorage, la navegacion sigue funcionando.
+  }
+}
+
+function restoreSavedView() {
+  let savedView = '';
+  try {
+    savedView = window.localStorage.getItem(ACTIVE_VIEW_KEY) || '';
+  } catch {
+    savedView = '';
+  }
+  showView(canAccessView(state.user?.role, savedView) ? savedView : defaultViewForRole(state.user?.role));
 }
 
 async function checkHealth() {
