@@ -297,6 +297,12 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (productMatch && method === 'DELETE') {
+    requireRole(ctx, ['master_admin']);
+    sendJson(res, 200, { product: await deleteProduct(productMatch[1]) });
+    return;
+  }
+
   if (method === 'POST' && url.pathname === '/api/sales') {
     requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'cashier']);
     const sale = await createOnlineSale(ctx, await readJson(req));
@@ -893,6 +899,16 @@ async function updateProduct(ctx, id, input) {
       reason: 'Edicion manual de stock'
     });
   }
+  return result.rows[0];
+}
+
+async function deleteProduct(id) {
+  const result = await pool.query(`
+    DELETE FROM cloud_products
+    WHERE id = $1
+    RETURNING id, store_id, name, barcode, sku
+  `, [id]);
+  if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
   return result.rows[0];
 }
 

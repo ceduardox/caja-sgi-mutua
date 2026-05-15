@@ -1247,7 +1247,10 @@ function renderProductManager() {
         <div><span class="label">Precio</span><strong>${money(product.sale_price)}</strong></div>
         <div><span class="label">Ganancia/u</span><strong>${money(profit)}</strong></div>
         <div><span class="label">Stock</span><strong class="${low ? 'stock-low' : ''}">${product.stock}</strong></div>
-        <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
+        <div class="manager-actions">
+          <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
+          ${state.user?.role === 'master_admin' ? `<button class="secondary danger-action" data-delete-product="${product.id}" data-product-name="${escapeHtml(product.name)}"><i data-lucide="trash-2"></i>Eliminar</button>` : ''}
+        </div>
       </div>
     `;
   }).join('') || '<div class="empty">No hay productos.</div>';
@@ -1255,7 +1258,25 @@ function renderProductManager() {
   els.productManagerList.querySelectorAll('[data-edit-product]').forEach((button) => {
     button.addEventListener('click', () => openProductById(button.dataset.editProduct));
   });
+  els.productManagerList.querySelectorAll('[data-delete-product]').forEach((button) => {
+    button.addEventListener('click', () => deleteProductById(button.dataset.deleteProduct, button.dataset.productName));
+  });
   renderIcons();
+}
+
+async function deleteProductById(id, name) {
+  const productName = name || 'este producto';
+  const confirmed = window.confirm(`Eliminar ${productName}? Esta accion no borra ventas historicas, pero el producto ya no aparecera en inventario.`);
+  if (!confirmed) return;
+  try {
+    await api(`/api/products/${id}`, { method: 'DELETE' });
+    state.cart.delete(id);
+    await refreshAll();
+    renderCart();
+    showToast('Producto eliminado');
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function addToCart(product) {
