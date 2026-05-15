@@ -102,6 +102,14 @@ const els = {
   productDialog: document.querySelector('#productDialog'),
   productForm: document.querySelector('#productForm'),
   productDialogTitle: document.querySelector('#productDialogTitle'),
+  productQuickFlow: document.querySelector('#productQuickFlow'),
+  productStepCounter: document.querySelector('#productStepCounter'),
+  productStepTitle: document.querySelector('#productStepTitle'),
+  productStepBar: document.querySelector('#productStepBar'),
+  productFullFormButton: document.querySelector('#productFullFormButton'),
+  productQuickActions: document.querySelector('#productQuickActions'),
+  productPrevStepButton: document.querySelector('#productPrevStepButton'),
+  productNextStepButton: document.querySelector('#productNextStepButton'),
   productId: document.querySelector('#productId'),
   productImageValue: document.querySelector('#productImageValue'),
   productImagePreview: document.querySelector('#productImagePreview'),
@@ -202,6 +210,16 @@ let productBarcodeTimer;
 let chartsResizeObserver;
 let mobileDevice = false;
 let posSearchRequestId = 0;
+let productQuickStep = 0;
+
+const PRODUCT_QUICK_STEPS = [
+  { title: 'Codigo de barras', focus: () => els.productBarcode },
+  { title: 'Nombre', focus: () => els.productName },
+  { title: 'Categoria', focus: () => state.settings.sku_enabled ? els.productSku : els.productCategoryName },
+  { title: 'Precio y costo', focus: () => els.productSalePrice },
+  { title: 'Stock', focus: () => els.productStock },
+  { title: 'Foto y detalle', focus: () => null }
+];
 
 boot();
 
@@ -277,6 +295,10 @@ function bindEvents() {
   document.addEventListener('keydown', handleGlobalBarcodeScan, true);
   els.closeProductDialog.addEventListener('click', () => els.productDialog.close());
   els.productForm.addEventListener('submit', saveProduct);
+  els.productFullFormButton.addEventListener('click', showFullProductForm);
+  els.productPrevStepButton.addEventListener('click', previousProductStep);
+  els.productNextStepButton.addEventListener('click', nextProductStep);
+  els.productForm.addEventListener('keydown', handleProductFormKeydown);
   els.productImageInput.addEventListener('change', handleImageInput);
   els.mobileCameraInput.addEventListener('change', handleImageInput);
   els.openCameraButton.addEventListener('click', openCameraCapture);
@@ -1374,13 +1396,107 @@ function openProductDialog(product = null, options = {}) {
   els.productActive.checked = product ? Boolean(product.active) : true;
   els.productImageInput.value = '';
   setProductImage(product?.image_path || null);
+  productQuickStep = 0;
+  setProductFormMode(mobileDevice);
   els.productDialog.showModal();
   if (options.focusBarcode) {
     startProductBarcodeScan();
+  } else if (mobileDevice) {
+    focusProductStepInput();
   } else {
     setBarcodeScanState(false);
     els.productName.focus();
   }
+}
+
+function setProductFormMode(quickMode) {
+  els.productDialog.classList.toggle('quick-mode', Boolean(quickMode));
+  els.productQuickFlow.hidden = !quickMode;
+  els.productQuickActions.hidden = !quickMode;
+  updateProductQuickStep();
+}
+
+function showFullProductForm() {
+  setProductFormMode(false);
+  setBarcodeScanState(false);
+  renderIcons();
+  window.setTimeout(() => els.productName.focus(), 60);
+}
+
+function updateProductQuickStep() {
+  const total = PRODUCT_QUICK_STEPS.length;
+  productQuickStep = Math.max(0, Math.min(productQuickStep, total - 1));
+  document.querySelectorAll('#productDialog .product-step-field').forEach((field) => {
+    field.classList.toggle('active-step', Number(field.dataset.productStep) === productQuickStep);
+  });
+  els.productStepCounter.textContent = `Paso ${productQuickStep + 1} de ${total}`;
+  els.productStepTitle.textContent = PRODUCT_QUICK_STEPS[productQuickStep].title;
+  els.productStepBar.style.width = `${((productQuickStep + 1) / total) * 100}%`;
+  els.productPrevStepButton.disabled = productQuickStep === 0;
+  els.productNextStepButton.innerHTML = productQuickStep === total - 1
+    ? 'Guardar producto<i data-lucide="check"></i>'
+    : 'Siguiente<i data-lucide="arrow-right"></i>';
+  renderIcons();
+}
+
+function focusProductStepInput() {
+  if (!els.productDialog.classList.contains('quick-mode')) return;
+  const input = PRODUCT_QUICK_STEPS[productQuickStep].focus?.();
+  window.setTimeout(() => {
+    input?.focus?.({ preventScroll: true });
+    input?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    if (input?.select && input.value) input.select();
+  }, 80);
+}
+
+function previousProductStep() {
+  if (!els.productDialog.classList.contains('quick-mode')) return;
+  productQuickStep -= 1;
+  updateProductQuickStep();
+  focusProductStepInput();
+}
+
+function nextProductStep() {
+  if (!els.productDialog.classList.contains('quick-mode')) return;
+  if (!validateProductQuickStep(productQuickStep)) return;
+  if (productQuickStep >= PRODUCT_QUICK_STEPS.length - 1) {
+    els.productForm.requestSubmit();
+    return;
+  }
+  productQuickStep += 1;
+  updateProductQuickStep();
+  focusProductStepInput();
+}
+
+function handleProductFormKeydown(event) {
+  if (!els.productDialog.classList.contains('quick-mode')) return;
+  if (waitingProductBarcodeScan) return;
+  if (event.key !== 'Enter') return;
+  if (event.target?.tagName === 'TEXTAREA') return;
+  const button = event.target?.closest?.('button');
+  if (button) return;
+  event.preventDefault();
+  nextProductStep();
+}
+
+function validateProductQuickStep(step) {
+  clearFieldErrors(els.productForm);
+  if (step === 1) return requireField(els.productName, 'Escribe el nombre del producto');
+  if (step === 3) {
+    if (!requireField(els.productSalePrice, 'Escribe el precio de venta')) return false;
+    if (Number(els.productSalePrice.value) < 0) {
+      markFieldError(els.productSalePrice, 'El precio de venta no puede ser negativo');
+      return false;
+    }
+  }
+  if (step === 4) {
+    if (!requireField(els.productStock, 'Escribe el stock inicial')) return false;
+    if (Number(els.productStock.value) < 0) {
+      markFieldError(els.productStock, 'El stock no puede ser negativo');
+      return false;
+    }
+  }
+  return true;
 }
 
 function startProductBarcodeScan() {
@@ -1407,6 +1523,13 @@ function finishProductBarcodeScan() {
   waitingProductBarcodeScan = false;
   productBarcodeBuffer = '';
   setBarcodeScanState(false);
+  if (els.productDialog.classList.contains('quick-mode')) {
+    productQuickStep = 1;
+    updateProductQuickStep();
+    focusProductStepInput();
+    showToast(`Codigo capturado: ${code}`);
+    return;
+  }
   const next = els.productName.value.trim() ? els.productSalePrice : els.productName;
   next.focus();
   next.select?.();
@@ -1539,6 +1662,11 @@ function applyCameraBarcode(value) {
     setBarcodeScanState(false);
     els.barcodeScanHint.textContent = `Codigo detectado con camara: ${code}`;
     els.productBarcode.dispatchEvent(new Event('input', { bubbles: true }));
+    if (els.productDialog.classList.contains('quick-mode')) {
+      productQuickStep = 1;
+      updateProductQuickStep();
+      focusProductStepInput();
+    }
     showToast('Codigo de barras agregado');
     return;
   }
@@ -1616,6 +1744,13 @@ async function saveProduct(event) {
     await refreshAll();
     showToast('Producto guardado');
   } catch (error) {
+    if (els.productDialog.classList.contains('quick-mode')) {
+      const step = productStepForField(error.field || guessErrorField(error.message));
+      if (step !== null) {
+        productQuickStep = step;
+        updateProductQuickStep();
+      }
+    }
     handleFormError(error, {
       name: els.productName,
       barcode: els.productBarcode,
@@ -1629,6 +1764,23 @@ async function saveProduct(event) {
       image_data: els.productImageInput
     });
   }
+}
+
+function productStepForField(field) {
+  const steps = {
+    barcode: 0,
+    name: 1,
+    sku: 2,
+    category_id: 2,
+    category_name: 2,
+    sale_price: 3,
+    cost_price: 3,
+    stock: 4,
+    min_stock: 4,
+    image_data: 5,
+    description: 5
+  };
+  return Object.prototype.hasOwnProperty.call(steps, field) ? steps[field] : null;
 }
 
 async function handleImageInput(event) {

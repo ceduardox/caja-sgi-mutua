@@ -876,6 +876,46 @@ dialog form,
   gap: 10px;
 }
 
+.product-quick-flow,
+.quick-actions {
+  display: none;
+}
+
+.quick-progress {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quick-progress span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.quick-progress strong {
+  font-size: 18px;
+}
+
+.quick-track {
+  height: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef5;
+}
+
+.quick-track span {
+  display: block;
+  width: 16.66%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 160ms ease;
+}
+
 .product-image {
   width: 180px;
   aspect-ratio: 1;
@@ -1900,6 +1940,109 @@ select {
 
   #productDialog .primary {
     min-height: 52px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode {
+    width: min(96vw, 520px);
+    max-height: min(88dvh, 720px);
+  }
+
+  .is-mobile-device #productDialog.quick-mode form {
+    display: flex;
+    min-height: min(76dvh, 620px);
+    max-height: min(88dvh, 720px);
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-quick-flow,
+  .is-mobile-device #productDialog.quick-mode .quick-actions {
+    display: grid;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-quick-flow {
+    flex: 0 0 auto;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-actions.top {
+    justify-items: start;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-editor {
+    flex: 1 1 auto;
+    display: block;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px 0 10px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .form-grid {
+    display: block;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-step-field {
+    display: none;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-step-field.active-step {
+    display: grid;
+  }
+
+  .is-mobile-device #productDialog.quick-mode label.product-step-field.active-step {
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 18px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .image-editor.active-step {
+    justify-items: stretch;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-image {
+    width: min(58vw, 220px);
+    margin: 0 auto 4px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode input,
+  .is-mobile-device #productDialog.quick-mode textarea,
+  .is-mobile-device #productDialog.quick-mode select {
+    min-height: 58px;
+    font-size: 18px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode textarea {
+    min-height: 110px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .inline-input {
+    gap: 10px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .field-hint {
+    font-size: 14px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-actions.bottom {
+    flex: 0 0 auto;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    background: #fff;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-actions.bottom .primary {
+    min-height: 56px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-actions.bottom .secondary {
+    min-height: 56px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode > form > button[type="submit"] {
+    display: none;
   }
 
   .product-editor,

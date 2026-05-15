@@ -340,8 +340,18 @@
         </div>
         <input type="hidden" id="productId">
         <input type="hidden" id="productImageValue">
+        <div id="productQuickFlow" class="product-quick-flow" hidden>
+          <div class="quick-progress">
+            <span id="productStepCounter">Paso 1 de 6</span>
+            <strong id="productStepTitle">Codigo de barras</strong>
+          </div>
+          <div class="quick-track" aria-hidden="true"><span id="productStepBar"></span></div>
+          <div class="quick-actions top">
+            <button id="productFullFormButton" class="ghost" type="button"><i data-lucide="rows-3"></i>Formulario completo</button>
+          </div>
+        </div>
         <div class="product-editor">
-          <div class="image-editor">
+          <div class="image-editor product-step-field" data-product-step="5">
             <div id="productImagePreview" class="product-image empty">Sin imagen</div>
             <label class="file-button">
               Subir imagen
@@ -356,8 +366,8 @@
           </div>
           <div>
         <div class="form-grid">
-          <label>Nombre<input id="productName" required placeholder="Ej. Agua mineral 600 ml"></label>
-          <label>Codigo de barras
+          <label class="product-step-field" data-product-step="1">Nombre<input id="productName" required placeholder="Ej. Agua mineral 600 ml"></label>
+          <label class="product-step-field" data-product-step="0">Codigo de barras
             <div class="inline-input">
               <input id="productBarcode" autocomplete="off" placeholder="Escanea o escribe el codigo">
               <button id="focusBarcodeButton" class="secondary desktop-scan-only" type="button">Escanear</button>
@@ -365,17 +375,21 @@
             </div>
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>
-          <label class="sku-field">SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>
-          <label>Categoria<input id="productCategoryName" list="productCategoryOptions" placeholder="Ej. Bebidas"></label>
-          <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required placeholder="Ej. 5.00"></label>
-          <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01" placeholder="Ej. 3.50"></label>
-          <label>Stock<input id="productStock" type="number" min="0" step="1" required placeholder="Ej. 24"></label>
-          <label>Stock minimo<input id="productMinStock" type="number" min="0" step="1" placeholder="Ej. 5"></label>
-          <label class="checkbox"><input id="productActive" type="checkbox" checked> Activo</label>
+          <label class="sku-field product-step-field" data-product-step="2">SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>
+          <label class="product-step-field" data-product-step="2">Categoria<input id="productCategoryName" list="productCategoryOptions" placeholder="Ej. Bebidas"></label>
+          <label class="product-step-field" data-product-step="3">Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required placeholder="Ej. 5.00"></label>
+          <label class="product-step-field" data-product-step="3">Costo<input id="productCostPrice" type="number" min="0" step="0.01" placeholder="Ej. 3.50"></label>
+          <label class="product-step-field" data-product-step="4">Stock<input id="productStock" type="number" min="0" step="1" required placeholder="Ej. 24"></label>
+          <label class="product-step-field" data-product-step="4">Stock minimo<input id="productMinStock" type="number" min="0" step="1" placeholder="Ej. 5"></label>
+          <label class="checkbox product-step-field" data-product-step="4"><input id="productActive" type="checkbox" checked> Activo</label>
         </div>
-        <label>Descripcion<textarea id="productDescription" rows="3" placeholder="Detalle opcional del producto"></textarea></label>
+        <label class="product-step-field" data-product-step="5">Descripcion<textarea id="productDescription" rows="3" placeholder="Detalle opcional del producto"></textarea></label>
         <datalist id="productCategoryOptions"></datalist>
           </div>
+        </div>
+        <div id="productQuickActions" class="quick-actions bottom" hidden>
+          <button id="productPrevStepButton" class="secondary" type="button"><i data-lucide="arrow-left"></i>Atras</button>
+          <button id="productNextStepButton" class="primary" type="button">Siguiente<i data-lucide="arrow-right"></i></button>
         </div>
         <button class="primary" type="submit">Guardar producto</button>
       </form>
