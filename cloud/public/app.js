@@ -918,7 +918,9 @@ function restoreSavedView() {
 
 function activeViewKey() {
   const userPart = state.user?.id || state.user?.username || 'guest';
-  return `${ACTIVE_VIEW_KEY}_${state.user?.role || 'guest'}_${userPart}`;
+  const rolePart = state.user?.role || 'guest';
+  const version = rolePart === 'tenant_owner' ? '_reports_v2' : '';
+  return `${ACTIVE_VIEW_KEY}_${rolePart}_${userPart}${version}`;
 }
 
 async function checkHealth() {
