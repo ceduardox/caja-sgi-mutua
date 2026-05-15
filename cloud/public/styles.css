@@ -1852,6 +1852,52 @@ select {
     max-height: 92vh;
   }
 
+  #productDialog {
+    width: min(94vw, 520px);
+  }
+
+  #productDialog form {
+    padding: 14px;
+  }
+
+  #productDialog .panel-header {
+    margin-bottom: 8px;
+  }
+
+  #productDialog label {
+    gap: 4px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  #productDialog input,
+  #productDialog textarea,
+  #productDialog select {
+    min-height: 48px;
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  #productDialog .form-grid {
+    gap: 8px;
+  }
+
+  #productDialog .product-editor {
+    gap: 12px;
+  }
+
+  #productDialog .field-hint {
+    margin-top: 2px;
+  }
+
+  #productDialog .checkbox {
+    margin: 2px 0 6px;
+  }
+
+  #productDialog .primary {
+    min-height: 52px;
+  }
+
   .product-editor,
   .form-grid,
   .filter-grid,
@@ -1889,6 +1935,21 @@ select {
 
   .panel {
     padding: 14px;
+  }
+
+  #productDialog form {
+    padding: 12px;
+  }
+
+  #productDialog label {
+    margin-bottom: 6px;
+  }
+
+  #productDialog input,
+  #productDialog textarea,
+  #productDialog select {
+    min-height: 44px;
+    padding: 9px 11px;
   }
 
   .panel-header {
