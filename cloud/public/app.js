@@ -904,7 +904,10 @@ function restoreSavedView() {
   let savedView = '';
   try {
     savedView = window.localStorage.getItem(activeViewKey()) || '';
-    if (!savedView && state.user?.role !== 'tenant_owner') {
+    if (!savedView && !['tenant_owner'].includes(state.user?.role)) {
+      savedView = window.localStorage.getItem(`${ACTIVE_VIEW_KEY}_${state.user?.role || 'guest'}`) || '';
+    }
+    if (!savedView && !['tenant_owner'].includes(state.user?.role)) {
       savedView = window.localStorage.getItem(ACTIVE_VIEW_KEY) || '';
     }
   } catch {
@@ -914,7 +917,8 @@ function restoreSavedView() {
 }
 
 function activeViewKey() {
-  return `${ACTIVE_VIEW_KEY}_${state.user?.role || 'guest'}`;
+  const userPart = state.user?.id || state.user?.username || 'guest';
+  return `${ACTIVE_VIEW_KEY}_${state.user?.role || 'guest'}_${userPart}`;
 }
 
 async function checkHealth() {
