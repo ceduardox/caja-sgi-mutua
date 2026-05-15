@@ -14,6 +14,39 @@ const state = {
   lastReport: null
 };
 
+const DEFAULT_CATEGORY_NAMES = [
+  'Abarrotes',
+  'Agua',
+  'Alfombras',
+  'Bebidas',
+  'Carnes',
+  'Cereales',
+  'Condimentos',
+  'Congelados',
+  'Dulces',
+  'Embutidos',
+  'Enlatados',
+  'Farmacia',
+  'Frutas',
+  'Galletas',
+  'Granos',
+  'Helados',
+  'Higiene personal',
+  'Lacteos',
+  'Limpieza',
+  'Mascotas',
+  'Panaderia',
+  'Papeleria',
+  'Pastas',
+  'Perfumeria',
+  'Plasticos',
+  'Reposteria',
+  'Snacks',
+  'Verduras',
+  'Vinos y licores',
+  'Desechables'
+];
+
 const els = {
   tabs: document.querySelectorAll('.tab'),
   views: document.querySelectorAll('.view'),
@@ -30,6 +63,8 @@ const els = {
   productCategoryFilter: document.querySelector('#productCategoryFilter'),
   productStockFilter: document.querySelector('#productStockFilter'),
   productStatusFilter: document.querySelector('#productStatusFilter'),
+  categoryForm: document.querySelector('#categoryForm'),
+  newCategoryName: document.querySelector('#newCategoryName'),
   salesList: document.querySelector('#salesList'),
   todayTotal: document.querySelector('#todayTotal'),
   todayCount: document.querySelector('#todayCount'),
@@ -202,6 +237,7 @@ function bindEvents() {
   [els.productCategoryFilter, els.productStockFilter, els.productStatusFilter].forEach((input) => {
     input.addEventListener('change', () => loadProducts(els.productSearchInput.value.trim(), { manager: true }));
   });
+  els.categoryForm.addEventListener('submit', saveCategory);
   els.checkoutButton.addEventListener('click', openPaymentDialog);
   els.paymentForm.addEventListener('submit', checkout);
   els.closePaymentDialog.addEventListener('click', () => els.paymentDialog.close());
@@ -669,7 +705,28 @@ function renderCategoryControls() {
   const options = state.categories.map((category) => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join('');
   els.productCategoryFilter.innerHTML = `<option value="">Todas</option>${options}`;
   if (state.categories.some((category) => category.id === selected)) els.productCategoryFilter.value = selected;
-  els.productCategoryOptions.innerHTML = state.categories.map((category) => `<option value="${escapeHtml(category.name)}"></option>`).join('');
+  const names = [...new Set([
+    ...state.categories.map((category) => category.name),
+    ...DEFAULT_CATEGORY_NAMES
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  els.productCategoryOptions.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+}
+
+async function saveCategory(event) {
+  event.preventDefault();
+  clearFieldErrors(els.categoryForm);
+  if (!requireField(els.newCategoryName, 'Escribe el nombre de la categoria')) return;
+  try {
+    await api('/api/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name: els.newCategoryName.value, store_id: activeStoreId() })
+    });
+    els.newCategoryName.value = '';
+    await loadCategories();
+    showToast('Categoria agregada');
+  } catch (error) {
+    handleFormError(error, { name: els.newCategoryName });
+  }
 }
 
 async function loadProducts(query = '', options = {}) {

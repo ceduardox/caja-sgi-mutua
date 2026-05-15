@@ -144,6 +144,12 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === 'POST' && url.pathname === '/api/categories') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor']);
+    sendJson(res, 201, { category: await createCategory(ctx, await readJson(req)) });
+    return;
+  }
+
   if (method === 'PUT' && url.pathname === '/api/active-store') {
     requireRole(ctx, ['master_admin', 'tenant_owner']);
     sendJson(res, 200, { store: await getActiveStore(ctx, (await readJson(req)).store_id) });
@@ -520,6 +526,18 @@ async function listCategories(ctx, requestedStoreId) {
     ORDER BY lower(name) ASC
   `, [storeId]);
   return result.rows;
+}
+
+async function createCategory(ctx, input) {
+  const storeId = await resolveStoreId(ctx, input.store_id || input.storeId);
+  const name = cleanRequired(input.name, 'Categoria');
+  const result = await pool.query(`
+    INSERT INTO cloud_categories (store_id, name)
+    VALUES ($1, $2)
+    ON CONFLICT (store_id, name) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id, store_id, name, created_at
+  `, [storeId, name]);
+  return result.rows[0];
 }
 
 async function listUsers(ctx) {

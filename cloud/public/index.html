@@ -149,6 +149,10 @@
           <label>Stock<select id="productStockFilter"><option value="">Todos</option><option value="available">Con stock</option><option value="low">Stock bajo</option><option value="out">Agotados</option></select></label>
           <label>Estado<select id="productStatusFilter"><option value="all">Todos</option><option value="active">Activos</option><option value="inactive">Inactivos</option></select></label>
         </div>
+        <form id="categoryForm" class="category-form">
+          <label>Nueva categoria<input id="newCategoryName" list="productCategoryOptions" autocomplete="off" placeholder="Ej. Alfombras"></label>
+          <button class="secondary" type="submit"><i data-lucide="plus"></i>Agregar categoria</button>
+        </form>
         <div id="productManagerList" class="manager-list"></div>
       </section>
     </main>

@@ -708,6 +708,18 @@ textarea {
   margin: 14px 0;
 }
 
+.category-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 0 0 14px;
+}
+
+.category-form .secondary {
+  min-height: 46px;
+}
+
 .manager-row {
   display: grid;
   grid-template-columns: auto minmax(220px, 1fr) 110px 120px 80px auto;
@@ -1834,6 +1846,7 @@ select {
   .product-editor,
   .form-grid,
   .filter-grid,
+  .category-form,
   .inline-input,
   .payment-methods,
   .dialog-actions {
