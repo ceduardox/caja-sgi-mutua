@@ -366,13 +366,14 @@
           </div>
           <div>
         <div class="form-grid">
-          <label class="product-step-field" data-product-step="1">Nombre<input id="productName" required placeholder="Ej. Agua mineral 600 ml"></label>
+          <label class="product-step-field" data-product-step="1">Nombre<input id="productName" required placeholder="Ej. Agua mineral 600 ml"><small id="productNameError" class="field-message" hidden></small></label>
           <label class="product-step-field" data-product-step="0">Codigo de barras
             <div class="inline-input">
               <input id="productBarcode" autocomplete="off" placeholder="Escanea o escribe el codigo">
               <button id="focusBarcodeButton" class="secondary desktop-scan-only" type="button">Escanear</button>
               <button id="productBarcodeCameraButton" class="secondary mobile-scan-only" type="button" aria-label="Escanear codigo de barras"><i data-lucide="scan-barcode"></i></button>
             </div>
+            <small id="productBarcodeError" class="field-message" hidden></small>
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>
           <label class="sku-field product-step-field" data-product-step="2">SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>

@@ -123,6 +123,7 @@ const els = {
   productBarcode: document.querySelector('#productBarcode'),
   productBarcodeCameraButton: document.querySelector('#productBarcodeCameraButton'),
   barcodeScanHint: document.querySelector('#barcodeScanHint'),
+  productBarcodeError: document.querySelector('#productBarcodeError'),
   productSku: document.querySelector('#productSku'),
   productCategoryName: document.querySelector('#productCategoryName'),
   productCategoryOptions: document.querySelector('#productCategoryOptions'),
@@ -132,6 +133,7 @@ const els = {
   productMinStock: document.querySelector('#productMinStock'),
   productDescription: document.querySelector('#productDescription'),
   productActive: document.querySelector('#productActive'),
+  productNameError: document.querySelector('#productNameError'),
   newProductButton: document.querySelector('#newProductButton'),
   scanNewProductButton: document.querySelector('#scanNewProductButton'),
   focusBarcodeButton: document.querySelector('#focusBarcodeButton'),
@@ -288,6 +290,8 @@ function bindEvents() {
   els.focusBarcodeButton.addEventListener('click', startProductBarcodeScan);
   els.productBarcodeCameraButton.addEventListener('click', () => openBarcodeCamera('product'));
   els.productBarcode.addEventListener('input', handleProductBarcodeInput);
+  els.productName.addEventListener('input', () => validateProductNameDuplicate({ silent: true }));
+  els.productBarcode.addEventListener('input', () => validateProductBarcodeDuplicate({ silent: true }));
   els.productBarcode.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -1416,6 +1420,7 @@ function openProductDialog(product = null, options = {}) {
   els.productDescription.value = product?.description || '';
   els.productActive.checked = product ? Boolean(product.active) : true;
   els.productImageInput.value = '';
+  clearProductDuplicateMessages();
   setProductImage(product?.image_path || null);
   productQuickStep = 0;
   setProductFormMode(mobileDevice);
@@ -1503,7 +1508,11 @@ function handleProductFormKeydown(event) {
 
 function validateProductQuickStep(step) {
   clearFieldErrors(els.productForm);
-  if (step === 1) return requireField(els.productName, 'Escribe el nombre del producto');
+  if (step === 0) return validateProductBarcodeDuplicate();
+  if (step === 1) {
+    if (!requireField(els.productName, 'Escribe el nombre del producto')) return false;
+    return validateProductNameDuplicate();
+  }
   if (step === 3) {
     if (!requireField(els.productSalePrice, 'Escribe el precio de venta')) return false;
     if (Number(els.productSalePrice.value) < 0) {
@@ -1519,6 +1528,64 @@ function validateProductQuickStep(step) {
     }
   }
   return true;
+}
+
+function validateProductBarcodeDuplicate(options = {}) {
+  const barcode = els.productBarcode.value.trim();
+  const existing = barcode ? findDuplicateProduct('barcode', barcode) : null;
+  if (!existing) {
+    setFieldMessage(els.productBarcodeError, '');
+    els.productBarcode.classList.remove('field-error');
+    return true;
+  }
+  const message = `Este codigo ya esta registrado: ${existing.name}`;
+  setFieldMessage(els.productBarcodeError, message);
+  if (options.silent) {
+    els.productBarcode.classList.add('field-error');
+  } else {
+    markFieldError(els.productBarcode, message);
+  }
+  return false;
+}
+
+function validateProductNameDuplicate(options = {}) {
+  const name = els.productName.value.trim();
+  const existing = name ? findDuplicateProduct('name', name) : null;
+  if (!existing) {
+    setFieldMessage(els.productNameError, '');
+    els.productName.classList.remove('field-error');
+    return true;
+  }
+  const message = `Ya existe un producto con este nombre: ${existing.name}`;
+  setFieldMessage(els.productNameError, message);
+  if (options.silent) {
+    els.productName.classList.add('field-error');
+  } else {
+    markFieldError(els.productName, message);
+  }
+  return false;
+}
+
+function findDuplicateProduct(field, value) {
+  const currentId = els.productId.value;
+  const cleanValue = field === 'name' ? normalizeSearchText(value) : String(value || '').trim();
+  if (!cleanValue) return null;
+  return state.products.find((product) => {
+    if (product.id === currentId) return false;
+    if (field === 'name') return normalizeSearchText(product.name) === cleanValue;
+    return String(product.barcode || '').trim() === cleanValue;
+  }) || null;
+}
+
+function clearProductDuplicateMessages() {
+  setFieldMessage(els.productNameError, '');
+  setFieldMessage(els.productBarcodeError, '');
+}
+
+function setFieldMessage(element, message) {
+  if (!element) return;
+  element.textContent = message || '';
+  element.hidden = !message;
 }
 
 function startProductBarcodeScan() {
@@ -1726,7 +1793,10 @@ function stopBarcodeCamera() {
 async function saveProduct(event) {
   event.preventDefault();
   clearFieldErrors(els.productForm);
+  clearProductDuplicateMessages();
   if (!requireField(els.productName, 'Escribe el nombre del producto')) return;
+  if (!validateProductNameDuplicate()) return;
+  if (!validateProductBarcodeDuplicate()) return;
   if (!requireField(els.productSalePrice, 'Escribe el precio de venta')) return;
   if (Number(els.productSalePrice.value) < 0) {
     markFieldError(els.productSalePrice, 'El precio de venta no puede ser negativo');
@@ -2382,9 +2452,15 @@ function markFieldError(input, message) {
     return;
   }
   input.classList.add('field-error');
+  setInlineFieldError(input, message);
   input.focus?.();
   input.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   showToast(message);
+}
+
+function setInlineFieldError(input, message) {
+  if (input === els.productName) setFieldMessage(els.productNameError, message);
+  if (input === els.productBarcode) setFieldMessage(els.productBarcodeError, message);
 }
 
 function handleFormError(error, fieldMap = {}) {

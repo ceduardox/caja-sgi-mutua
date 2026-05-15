@@ -1500,6 +1500,13 @@ async function resolveCategoryId(storeId, categoryId, categoryName) {
 }
 
 async function assertUniqueProductCodes(storeId, product, exceptId = null) {
+  if (product.name) {
+    const name = await pool.query(
+      'SELECT id FROM cloud_products WHERE store_id = $1 AND lower(btrim(name)) = lower(btrim($2)) AND ($3::uuid IS NULL OR id <> $3::uuid)',
+      [storeId, product.name, exceptId]
+    );
+    if (name.rowCount > 0) throw new HttpError(400, 'Ya existe un producto con ese nombre', 'name');
+  }
   if (product.barcode) {
     const barcode = await pool.query(
       'SELECT id FROM cloud_products WHERE store_id = $1 AND barcode = $2 AND ($3::uuid IS NULL OR id <> $3::uuid)',

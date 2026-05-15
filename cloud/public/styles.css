@@ -46,6 +46,14 @@ textarea.field-error {
   box-shadow: 0 0 0 4px rgba(217, 45, 32, 0.12) !important;
 }
 
+.field-message {
+  margin-top: 4px;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 button {
   border: 0;
   border-radius: 10px;
