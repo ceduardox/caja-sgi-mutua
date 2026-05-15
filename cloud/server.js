@@ -832,9 +832,14 @@ async function listProducts(ctx, searchParams) {
   const result = await pool.query(`
     SELECT p.id, p.store_id, p.category_id, c.name AS category_name, p.barcode, p.sku,
       p.name, p.cost_price::float, p.sale_price::float, p.stock::float,
-      p.min_stock::float, p.unit, p.description, p.image_data AS image_path, p.image_data, p.active, p.updated_at
+      p.min_stock::float, p.unit, p.description, p.image_data AS image_path, p.image_data, p.active,
+      p.created_by, creator.name AS created_by_name, creator.role AS created_by_role,
+      p.updated_by, updater.name AS updated_by_name, updater.role AS updated_by_role,
+      p.created_at, p.updated_at
     FROM cloud_products p
     LEFT JOIN cloud_categories c ON c.id = p.category_id
+    LEFT JOIN cloud_users creator ON creator.id = p.created_by
+    LEFT JOIN cloud_users updater ON updater.id = p.updated_by
     ${where}
     ORDER BY p.name ASC
     LIMIT 500
@@ -849,11 +854,11 @@ async function createProduct(ctx, input) {
   await assertUniqueProductCodes(storeId, product);
   const result = await pool.query(`
     INSERT INTO cloud_products (
-      store_id, category_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, description, image_data, active
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      store_id, category_id, barcode, sku, name, cost_price, sale_price, stock, min_stock, unit, description, image_data, active, created_by, updated_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
     RETURNING id, store_id, category_id, barcode, sku, name, cost_price::float, sale_price::float,
-      stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
-  `, [storeId, product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active]);
+      stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, created_by, updated_by, created_at, updated_at
+  `, [storeId, product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, ctx.user.id]);
   if (Number(result.rows[0].stock || 0) !== 0) {
     await recordStockMovement(pool, {
       storeId,
@@ -880,11 +885,12 @@ async function updateProduct(ctx, id, input) {
   const result = await pool.query(`
     UPDATE cloud_products
     SET category_id = $1, barcode = $2, sku = $3, name = $4, cost_price = $5, sale_price = $6,
-      stock = $7, min_stock = $8, unit = $9, description = $10, image_data = $11, active = $12, updated_at = now()
-    WHERE id = $13 AND store_id = $14
+      stock = $7, min_stock = $8, unit = $9, description = $10, image_data = $11, active = $12,
+      updated_by = $13, updated_at = now()
+    WHERE id = $14 AND store_id = $15
     RETURNING id, store_id, category_id, barcode, sku, name, cost_price::float, sale_price::float,
-      stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, updated_at
-  `, [product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, id, storeId]);
+      stock::float, min_stock::float, unit, description, image_data AS image_path, image_data, active, created_by, updated_by, created_at, updated_at
+  `, [product.category_id, product.barcode, product.sku, product.name, product.cost_price, product.sale_price, product.stock, product.min_stock, product.unit, product.description, product.image_data, product.active, ctx.user.id, id, storeId]);
   if (result.rowCount === 0) throw new HttpError(404, 'Producto no encontrado');
   const newStock = Number(result.rows[0].stock || 0);
   if (previousStock !== newStock) {

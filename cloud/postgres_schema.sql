@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS cloud_products (
   description TEXT,
   image_data TEXT,
   active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (store_id, barcode),
@@ -144,6 +146,8 @@ CREATE TABLE IF NOT EXISTS cloud_sale_items (
 
 ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES cloud_categories(id) ON DELETE SET NULL;
+ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES cloud_users(id) ON DELETE SET NULL;
+ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES cloud_users(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS cloud_cash_shifts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

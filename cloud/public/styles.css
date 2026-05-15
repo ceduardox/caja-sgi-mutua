@@ -710,6 +710,11 @@ textarea {
   background: #fff4f2;
 }
 
+.product-audit {
+  font-size: 12px;
+  color: #7a8498;
+}
+
 .mini-button {
   min-height: 34px;
   padding: 7px 10px;

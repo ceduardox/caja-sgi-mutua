@@ -1221,6 +1221,7 @@ function renderProducts() {
           <strong>${escapeHtml(product.name)}</strong>
           <div class="meta">${escapeHtml(productCodeLabel(product))} - ${escapeHtml(product.category_name || 'Sin categoria')} - ${money(product.sale_price)}</div>
           <div class="meta ${low ? 'stock-low' : ''}">Stock ${product.stock} / minimo ${product.min_stock}</div>
+          ${productAuditLine(product)}
         </div>
         <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
       </div>
@@ -1243,6 +1244,7 @@ function renderProductManager() {
         <div>
           <strong>${escapeHtml(product.name)}</strong>
           <div class="meta">${escapeHtml(productCodeLabel(product))} - ${escapeHtml(product.category_name || 'Sin categoria')}${product.active ? '' : ' - Inactivo'}</div>
+          ${productAuditLine(product)}
         </div>
         <div><span class="label">Precio</span><strong>${money(product.sale_price)}</strong></div>
         <div><span class="label">Ganancia/u</span><strong>${money(profit)}</strong></div>
@@ -1277,6 +1279,14 @@ async function deleteProductById(id, name) {
   } catch (error) {
     showToast(error.message);
   }
+}
+
+function productAuditLine(product) {
+  const created = product.created_by_name ? `Creado por ${product.created_by_name}${product.created_by_role ? ` (${roleLabel(product.created_by_role)})` : ''}` : '';
+  const showUpdated = product.updated_by_name && (!product.created_by || product.updated_by !== product.created_by);
+  const updated = showUpdated ? `Editado por ${product.updated_by_name}${product.updated_by_role ? ` (${roleLabel(product.updated_by_role)})` : ''}` : '';
+  const text = updated || created;
+  return text ? `<div class="meta product-audit">${escapeHtml(text)}</div>` : '';
 }
 
 function addToCart(product) {
