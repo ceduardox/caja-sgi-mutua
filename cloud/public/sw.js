@@ -5,6 +5,7 @@ const APP_SHELL = [
   '/styles.css',
   '/app.js',
   '/manifest.webmanifest',
+  '/assets/icon-192.png',
   '/assets/favicon.png'
 ];
 
