@@ -119,6 +119,18 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/settings') {
+    requireRole(ctx, ['master_admin', 'tenant_owner', 'branch_admin', 'editor', 'cashier']);
+    sendJson(res, 200, { settings: await getSettings() });
+    return;
+  }
+
+  if (method === 'PUT' && url.pathname === '/api/settings') {
+    requireRole(ctx, ['master_admin']);
+    sendJson(res, 200, { settings: await updateSettings(await readJson(req)) });
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/tenants') {
     requireRole(ctx, ['master_admin']);
     sendJson(res, 200, { tenants: await listTenants() });
@@ -425,6 +437,25 @@ async function getDashboard(ctx) {
     today_count: today.rows[0].count,
     today_total: Number(today.rows[0].total || 0)
   };
+}
+
+async function getSettings() {
+  const result = await pool.query('SELECT key, value_json FROM cloud_settings');
+  const settings = { sku_enabled: false };
+  for (const row of result.rows) settings[row.key] = row.value_json;
+  return settings;
+}
+
+async function updateSettings(input) {
+  const settings = {
+    sku_enabled: Boolean(input.sku_enabled ?? input.skuEnabled)
+  };
+  await pool.query(`
+    INSERT INTO cloud_settings (key, value_json, updated_at)
+    VALUES ('sku_enabled', $1::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = now()
+  `, [JSON.stringify(settings.sku_enabled)]);
+  return settings;
 }
 
 async function listTenants() {

@@ -58,7 +58,7 @@
           <span>Escanear o buscar producto</span>
           <div class="input-shell">
             <i data-lucide="search"></i>
-            <input id="scanInput" autocomplete="off" placeholder="Codigo de barras, SKU o nombre">
+            <input id="scanInput" autocomplete="off" placeholder="Codigo de barras o nombre">
             <button id="scanCameraButton" class="icon-action mobile-scan-only" type="button" aria-label="Escanear con camara"><i data-lucide="camera"></i></button>
           </div>
           <small>Con lector USB: escanea y se agrega al carrito. En movil puedes usar la camara.</small>
@@ -142,7 +142,7 @@
         </div>
         <label class="search-line">
           <span>Buscar producto</span>
-          <input id="productSearchInput" autocomplete="off" placeholder="Nombre, codigo de barras o SKU">
+          <input id="productSearchInput" autocomplete="off" placeholder="Nombre o codigo de barras">
         </label>
         <div class="filter-grid">
           <label>Categoria<select id="productCategoryFilter"><option value="">Todas</option></select></label>
@@ -241,6 +241,16 @@
     </main>
 
     <main id="adminView" class="view page-view">
+      <section id="systemSettingsPanel" class="panel" hidden>
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow with-icon"><i data-lucide="settings"></i>Sistema</p>
+            <h2>Configuracion general</h2>
+          </div>
+        </div>
+        <label class="checkbox"><input id="skuEnabledToggle" type="checkbox"> Habilitar campo SKU en productos</label>
+      </section>
+
       <section class="panel">
         <div class="panel-header">
           <div>
@@ -355,7 +365,7 @@
             </div>
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>
-          <label>SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>
+          <label class="sku-field">SKU<input id="productSku" placeholder="Ej. AGUA-600"></label>
           <label>Categoria<input id="productCategoryName" list="productCategoryOptions" placeholder="Ej. Bebidas"></label>
           <label>Precio venta<input id="productSalePrice" type="number" min="0" step="0.01" required placeholder="Ej. 5.00"></label>
           <label>Costo<input id="productCostPrice" type="number" min="0" step="0.01" placeholder="Ej. 3.50"></label>

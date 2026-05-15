@@ -49,6 +49,16 @@ CREATE TABLE IF NOT EXISTS cloud_sessions (
   expires_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cloud_settings (
+  key TEXT PRIMARY KEY,
+  value_json JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO cloud_settings (key, value_json)
+VALUES ('sku_enabled', 'false'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY,
   store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,

@@ -387,6 +387,10 @@ textarea {
   display: none !important;
 }
 
+.sku-disabled .sku-field {
+  display: none !important;
+}
+
 #scanInput {
   min-height: 58px;
   font-size: 16px;

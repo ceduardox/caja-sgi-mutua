@@ -7,6 +7,7 @@ const state = {
   cashShift: null,
   cashShifts: [],
   stockMovements: [],
+  settings: { sku_enabled: false },
   user: null,
   activeStore: null,
   cart: new Map(),
@@ -95,6 +96,8 @@ const els = {
   userStore: document.querySelector('#userStore'),
   userRole: document.querySelector('#userRole'),
   usersList: document.querySelector('#usersList'),
+  systemSettingsPanel: document.querySelector('#systemSettingsPanel'),
+  skuEnabledToggle: document.querySelector('#skuEnabledToggle'),
   rolePermissionsList: document.querySelector('#rolePermissionsList'),
   productDialog: document.querySelector('#productDialog'),
   productForm: document.querySelector('#productForm'),
@@ -229,6 +232,7 @@ function bindEvents() {
   els.userForm.addEventListener('submit', saveUser);
   els.usersList.addEventListener('click', handleUsersListClick);
   els.userRole.addEventListener('change', updateUserFormPermissions);
+  els.skuEnabledToggle.addEventListener('change', saveSettings);
   els.activeStoreSelect.addEventListener('change', changeActiveStore);
   els.salesList.addEventListener('click', handleSaleAction);
   els.reportSalesList.addEventListener('click', handleSaleAction);
@@ -315,6 +319,7 @@ function bindEvents() {
 }
 
 async function refreshAll() {
+  await loadSettings();
   if (canManageAdmin(state.user?.role)) await loadAdminData();
   const tasks = [loadCategories(), loadProducts('', { manager: state.user?.role === 'editor' }), checkHealth()];
   if (canSell(state.user?.role)) tasks.push(refreshSummary(), loadSales(), loadOpenCashShift());
@@ -418,6 +423,39 @@ async function loadAdminData() {
   renderUsers(state.users);
   renderRolePermissions();
   updateUserFormPermissions();
+}
+
+async function loadSettings() {
+  const data = await api('/api/settings');
+  state.settings = { sku_enabled: false, ...(data.settings || {}) };
+  applySettingsUi();
+}
+
+function applySettingsUi() {
+  const enabled = Boolean(state.settings.sku_enabled);
+  document.body.classList.toggle('sku-enabled', enabled);
+  document.body.classList.toggle('sku-disabled', !enabled);
+  els.systemSettingsPanel.hidden = state.user?.role !== 'master_admin';
+  els.skuEnabledToggle.checked = enabled;
+  els.scanInput.placeholder = enabled ? 'Codigo de barras, SKU o nombre' : 'Codigo de barras o nombre';
+  els.productSearchInput.placeholder = enabled ? 'Nombre, codigo de barras o SKU' : 'Nombre o codigo de barras';
+}
+
+async function saveSettings() {
+  try {
+    const data = await api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ sku_enabled: els.skuEnabledToggle.checked })
+    });
+    state.settings = data.settings;
+    applySettingsUi();
+    renderProducts();
+    renderProductManager();
+    showToast('Configuracion actualizada');
+  } catch (error) {
+    els.skuEnabledToggle.checked = Boolean(state.settings.sku_enabled);
+    showToast(error.message);
+  }
 }
 
 function renderStores(stores) {
@@ -1054,8 +1092,9 @@ function addScannedProduct() {
   const query = els.scanInput.value.trim().toLowerCase();
   if (!query) return;
 
+  const codeFields = state.settings.sku_enabled ? ['barcode', 'sku'] : ['barcode'];
   const exact = state.products.find((product) =>
-    [product.barcode, product.sku].filter(Boolean).some((value) => String(value).toLowerCase() === query)
+    codeFields.map((field) => product[field]).filter(Boolean).some((value) => String(value).toLowerCase() === query)
   );
   if (exact) {
     addToCart(exact);
@@ -1079,7 +1118,7 @@ function renderSearchResults(products) {
       ${productThumb(product)}
       <span>
         <strong>${escapeHtml(product.name)}</strong>
-        <span class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - Stock ${product.stock}</span>
+        <span class="meta">${escapeHtml(productCodeLabel(product))} - Stock ${product.stock}</span>
       </span>
       <strong>${money(product.sale_price)}</strong>
     </button>
@@ -1101,7 +1140,7 @@ function renderProducts() {
         ${productThumb(product)}
         <div>
           <strong>${escapeHtml(product.name)}</strong>
-          <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - ${escapeHtml(product.category_name || 'Sin categoria')} - ${money(product.sale_price)}</div>
+          <div class="meta">${escapeHtml(productCodeLabel(product))} - ${escapeHtml(product.category_name || 'Sin categoria')} - ${money(product.sale_price)}</div>
           <div class="meta ${low ? 'stock-low' : ''}">Stock ${product.stock} / minimo ${product.min_stock}</div>
         </div>
         <button class="secondary" data-edit-product="${product.id}"><i data-lucide="pencil"></i>Editar</button>
@@ -1124,7 +1163,7 @@ function renderProductManager() {
         ${productThumb(product)}
         <div>
           <strong>${escapeHtml(product.name)}</strong>
-          <div class="meta">${escapeHtml(product.barcode || product.sku || 'Sin codigo')} - ${escapeHtml(product.category_name || 'Sin categoria')}${product.active ? '' : ' - Inactivo'}</div>
+          <div class="meta">${escapeHtml(productCodeLabel(product))} - ${escapeHtml(product.category_name || 'Sin categoria')}${product.active ? '' : ' - Inactivo'}</div>
         </div>
         <div><span class="label">Precio</span><strong>${money(product.sale_price)}</strong></div>
         <div><span class="label">Ganancia/u</span><strong>${money(profit)}</strong></div>
@@ -1161,7 +1200,7 @@ function renderCart() {
     <div class="cart-item">
       <div>
         <strong>${escapeHtml(product.name)}</strong>
-        <div class="meta">${escapeHtml(product.barcode || product.sku || '')}</div>
+        <div class="meta">${escapeHtml(productCodeLabel(product, ''))}</div>
       </div>
       <input type="number" min="1" max="${product.stock}" value="${quantity}" data-cart-qty="${product.id}">
       <strong>${money(product.sale_price * quantity)}</strong>
@@ -1293,7 +1332,7 @@ function openProductDialog(product = null, options = {}) {
   els.productId.value = product?.id || '';
   els.productName.value = product?.name || '';
   els.productBarcode.value = product?.barcode || '';
-  els.productSku.value = product?.sku || '';
+  els.productSku.value = state.settings.sku_enabled ? (product?.sku || '') : '';
   els.productCategoryName.value = product?.category_name || '';
   els.productSalePrice.value = product?.sale_price ?? '';
   els.productCostPrice.value = product?.cost_price ?? '';
@@ -1525,7 +1564,7 @@ async function saveProduct(event) {
     store_id: activeStoreId(),
     name: els.productName.value,
     barcode: els.productBarcode.value,
-    sku: els.productSku.value,
+    sku: state.settings.sku_enabled ? els.productSku.value : '',
     category_name: els.productCategoryName.value,
     sale_price: Number(els.productSalePrice.value),
     cost_price: Number(els.productCostPrice.value || 0),
@@ -1962,6 +2001,10 @@ function productThumb(product) {
     return `<span class="thumb image-click" data-product-image="${product.id}" title="Ampliar imagen"><img src="${product.image_path}" alt=""></span>`;
   }
   return `<span class="thumb placeholder">${initials(product.name)}</span>`;
+}
+
+function productCodeLabel(product, fallback = 'Sin codigo') {
+  return product?.barcode || (state.settings.sku_enabled ? product?.sku : '') || fallback;
 }
 
 function findProductImage(id) {
