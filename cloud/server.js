@@ -733,18 +733,19 @@ async function listCashShifts(ctx, requestedStoreId) {
 }
 
 async function listStockMovements(ctx, requestedStoreId) {
-  const storeId = await resolveStoreId(ctx, requestedStoreId);
+  const scope = await resolveReportScope(ctx, requestedStoreId);
   const result = await pool.query(`
-    SELECT sm.id, sm.store_id, sm.product_id, p.name AS product_name, sm.user_id, u.name AS user_name,
+    SELECT sm.id, sm.store_id, st.name AS store_name, sm.product_id, p.name AS product_name, sm.user_id, u.name AS user_name,
       sm.movement_type, sm.quantity::float, sm.previous_stock::float, sm.new_stock::float,
       sm.reason, sm.reference_type, sm.reference_id, sm.created_at
     FROM cloud_stock_movements sm
+    JOIN stores st ON st.id = sm.store_id
     LEFT JOIN cloud_products p ON p.id = sm.product_id
     LEFT JOIN cloud_users u ON u.id = sm.user_id
-    WHERE sm.store_id = $1
+    WHERE ${scope.productsWhere('sm')}
     ORDER BY sm.created_at DESC
     LIMIT 120
-  `, [storeId]);
+  `, scope.values);
   return result.rows;
 }
 
@@ -1139,18 +1140,18 @@ function saleAuditSnapshot(sale) {
 }
 
 async function getSummary(ctx, requestedStoreId) {
-  const storeId = await resolveStoreId(ctx, requestedStoreId);
+  const scope = await resolveReportScope(ctx, requestedStoreId);
   const [sales, lowStock] = await Promise.all([
     pool.query(`
       SELECT COUNT(*)::int AS count, COALESCE(SUM(total), 0)::float AS total
       FROM cloud_sales
-      WHERE store_id = $1 AND status = 'completed' AND local_created_at::date = CURRENT_DATE
-    `, [storeId]),
+      WHERE ${scope.salesWhere('cloud_sales')} AND status = 'completed' AND local_created_at::date = CURRENT_DATE
+    `, scope.values),
     pool.query(`
       SELECT COUNT(*)::int AS count
       FROM cloud_products
-      WHERE store_id = $1 AND active = TRUE AND stock <= min_stock
-    `, [storeId])
+      WHERE ${scope.productsWhere('cloud_products')} AND active = TRUE AND stock <= min_stock
+    `, scope.values)
   ]);
   return {
     today: new Date().toISOString().slice(0, 10),
@@ -1162,13 +1163,16 @@ async function getSummary(ctx, requestedStoreId) {
 }
 
 async function getReports(ctx, params) {
-  const storeId = await resolveStoreId(ctx, params.get('store_id'));
+  const scope = await resolveReportScope(ctx, params.get('store_id'));
   const today = new Date().toISOString().slice(0, 10);
   const from = cleanDate(params.get('from')) || today;
   const to = cleanDate(params.get('to')) || today;
   const fromStamp = `${from}T00:00:00`;
   const toStamp = `${to}T23:59:59`;
-  const [totals, byDay, bestSellers, lowStock, paymentMethods, sales] = await Promise.all([
+  const reportValues = [...scope.values, fromStamp, toStamp];
+  const fromIndex = scope.values.length + 1;
+  const toIndex = scope.values.length + 2;
+  const [totals, byDay, bestSellers, lowStock, paymentMethods, sales, products] = await Promise.all([
     pool.query(`
       SELECT COUNT(DISTINCT s.id)::int AS sales_count,
         COALESCE(SUM(si.quantity), 0)::float AS units_sold,
@@ -1177,15 +1181,15 @@ async function getReports(ctx, params) {
       FROM cloud_sales s
       LEFT JOIN cloud_sale_items si ON si.sale_id = s.id
       LEFT JOIN cloud_products p ON p.id = si.product_id
-      WHERE s.store_id = $1 AND s.status = 'completed' AND s.local_created_at BETWEEN $2 AND $3
-    `, [storeId, fromStamp, toStamp]),
+      WHERE ${scope.salesWhere('s')} AND s.status = 'completed' AND s.local_created_at BETWEEN $${fromIndex} AND $${toIndex}
+    `, reportValues),
     pool.query(`
       SELECT s.local_created_at::date AS day, COUNT(*)::int AS sales_count, COALESCE(SUM(s.total), 0)::float AS total
       FROM cloud_sales s
-      WHERE s.store_id = $1 AND s.status = 'completed' AND s.local_created_at BETWEEN $2 AND $3
+      WHERE ${scope.salesWhere('s')} AND s.status = 'completed' AND s.local_created_at BETWEEN $${fromIndex} AND $${toIndex}
       GROUP BY s.local_created_at::date
       ORDER BY day ASC
-    `, [storeId, fromStamp, toStamp]),
+    `, reportValues),
     pool.query(`
       SELECT si.product_id, si.product_name,
         COALESCE(SUM(si.quantity), 0)::float AS quantity,
@@ -1194,33 +1198,39 @@ async function getReports(ctx, params) {
       FROM cloud_sales s
       JOIN cloud_sale_items si ON si.sale_id = s.id
       LEFT JOIN cloud_products p ON p.id = si.product_id
-      WHERE s.store_id = $1 AND s.status = 'completed' AND s.local_created_at BETWEEN $2 AND $3
+      WHERE ${scope.salesWhere('s')} AND s.status = 'completed' AND s.local_created_at BETWEEN $${fromIndex} AND $${toIndex}
       GROUP BY si.product_id, si.product_name
       ORDER BY quantity DESC, total DESC
       LIMIT 10
-    `, [storeId, fromStamp, toStamp]),
+    `, reportValues),
     pool.query(`
       SELECT id, name, barcode, sku, stock::float, min_stock::float, sale_price::float, image_data AS image_path
       FROM cloud_products
-      WHERE store_id = $1 AND active = TRUE AND stock <= min_stock
+      WHERE ${scope.productsWhere('cloud_products')} AND active = TRUE AND stock <= min_stock
       ORDER BY stock ASC, name ASC
       LIMIT 50
-    `, [storeId]),
+    `, scope.values),
     pool.query(`
       SELECT payment_method, COUNT(*)::int AS sales_count, COALESCE(SUM(total), 0)::float AS total
-      FROM cloud_sales
-      WHERE store_id = $1 AND status = 'completed' AND local_created_at BETWEEN $2 AND $3
+      FROM cloud_sales s
+      WHERE ${scope.salesWhere('s')} AND status = 'completed' AND local_created_at BETWEEN $${fromIndex} AND $${toIndex}
       GROUP BY payment_method
       ORDER BY total DESC
-    `, [storeId, fromStamp, toStamp]),
+    `, reportValues),
     pool.query(`
-      SELECT id, store_id, local_created_at AS created_at, total::float, payment_method,
-        cash_received::float, cash_change::float, qr_transaction_code, status
-      FROM cloud_sales
-      WHERE store_id = $1 AND local_created_at BETWEEN $2 AND $3
-      ORDER BY local_created_at DESC
+      SELECT s.id, s.store_id, st.name AS store_name, s.local_created_at AS created_at, s.total::float, s.payment_method,
+        s.cash_received::float, s.cash_change::float, s.qr_transaction_code, s.status
+      FROM cloud_sales s
+      JOIN stores st ON st.id = s.store_id
+      WHERE ${scope.salesWhere('s')} AND s.local_created_at BETWEEN $${fromIndex} AND $${toIndex}
+      ORDER BY s.local_created_at DESC
       LIMIT 100
-    `, [storeId, fromStamp, toStamp])
+    `, reportValues),
+    pool.query(`
+      SELECT COUNT(*)::int AS count
+      FROM cloud_products
+      WHERE ${scope.productsWhere('cloud_products')} AND active = TRUE
+    `, scope.values)
   ]);
   const totalRow = totals.rows[0];
   const revenue = Number(totalRow.revenue || 0);
@@ -1234,7 +1244,8 @@ async function getReports(ctx, params) {
       units_sold: Number(totalRow.units_sold || 0),
       revenue,
       gross_profit: grossProfit,
-      margin_percent: revenue > 0 ? (grossProfit / revenue) * 100 : 0
+      margin_percent: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+      products_count: products.rows[0].count
     },
     by_day: byDay.rows,
     best_sellers: bestSellers.rows,
@@ -1380,6 +1391,24 @@ function shiftScopeFilter(ctx, requestedStoreId) {
 
 function canAdminStore(role) {
   return ['master_admin', 'tenant_owner', 'branch_admin'].includes(role);
+}
+
+async function resolveReportScope(ctx, requestedStoreId) {
+  const requested = cleanOptional(requestedStoreId);
+  if (requested === 'all') {
+    if (ctx.user.role !== 'tenant_owner') throw new HttpError(403, 'No tienes permiso para todas las sucursales');
+    return {
+      values: [ctx.user.tenant_id],
+      salesWhere: (alias) => `${alias}.store_id IN (SELECT id FROM stores WHERE tenant_id = $1 AND active = TRUE)`,
+      productsWhere: (alias) => `${alias}.store_id IN (SELECT id FROM stores WHERE tenant_id = $1 AND active = TRUE)`
+    };
+  }
+  const storeId = await resolveStoreId(ctx, requested);
+  return {
+    values: [storeId],
+    salesWhere: (alias) => `${alias}.store_id = $1`,
+    productsWhere: (alias) => `${alias}.store_id = $1`
+  };
 }
 
 function publicUser(user) {

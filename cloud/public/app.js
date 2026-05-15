@@ -177,12 +177,14 @@ const els = {
   barcodeCameraStatus: document.querySelector('#barcodeCameraStatus'),
   reportFrom: document.querySelector('#reportFrom'),
   reportTo: document.querySelector('#reportTo'),
+  reportStoreSelect: document.querySelector('#reportStoreSelect'),
   loadReportsButton: document.querySelector('#loadReportsButton'),
   exportSalesButton: document.querySelector('#exportSalesButton'),
   reportRevenue: document.querySelector('#reportRevenue'),
   reportProfit: document.querySelector('#reportProfit'),
   reportMargin: document.querySelector('#reportMargin'),
   reportUnits: document.querySelector('#reportUnits'),
+  reportProducts: document.querySelector('#reportProducts'),
   bestSellersList: document.querySelector('#bestSellersList'),
   lowStockList: document.querySelector('#lowStockList'),
   reportSalesList: document.querySelector('#reportSalesList'),
@@ -336,6 +338,10 @@ function bindEvents() {
     if (src) openImageViewer(src);
   }, true);
   els.loadReportsButton.addEventListener('click', loadReports);
+  els.reportStoreSelect.addEventListener('change', refreshReportPanels);
+  document.querySelectorAll('[data-report-range]').forEach((button) => {
+    button.addEventListener('click', () => applyReportRange(button.dataset.reportRange));
+  });
   els.exportSalesButton.addEventListener('click', exportReportSales);
   els.logoutButton.addEventListener('click', logout);
   window.addEventListener('resize', debounce(resizeCharts, 120));
@@ -489,6 +495,7 @@ async function saveSettings() {
 
 function renderStores(stores) {
   els.userStore.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
+  renderReportStoreOptions(stores);
   if (isGlobalAdmin(state.user?.role)) {
     const currentStoreId = els.activeStoreSelect.dataset.currentStore || state.activeStore?.id || stores[0]?.id || '';
     els.activeStoreSelect.innerHTML = stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join('');
@@ -506,6 +513,19 @@ function renderStores(stores) {
     </div>
   `).join('') || '<div class="empty">Sin sucursales.</div>';
   renderIcons();
+}
+
+function renderReportStoreOptions(stores) {
+  if (!els.reportStoreSelect) return;
+  const current = els.reportStoreSelect.value || (state.user?.role === 'tenant_owner' ? 'all' : activeStoreId());
+  const options = [];
+  if (state.user?.role === 'tenant_owner') {
+    options.push('<option value="all">Todas las sucursales</option>');
+  }
+  options.push(...stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`));
+  els.reportStoreSelect.innerHTML = options.join('');
+  const values = options.length ? [...els.reportStoreSelect.options].map((option) => option.value) : [];
+  els.reportStoreSelect.value = values.includes(current) ? current : (values[0] || '');
 }
 
 async function changeActiveStore() {
@@ -749,15 +769,13 @@ function showView(viewId) {
   }
   if (viewId === 'productsView') els.productSearchInput.focus();
   if (viewId === 'reportsView') {
-    loadReports().then(() => window.setTimeout(resizeCharts, 80));
-    loadCashShifts().catch((error) => showToast(error.message));
-    loadStockMovements().catch((error) => showToast(error.message));
+    refreshReportPanels().then(() => window.setTimeout(resizeCharts, 80)).catch((error) => showToast(error.message));
   }
 }
 
 function saveActiveView(viewId) {
   try {
-    window.localStorage.setItem(ACTIVE_VIEW_KEY, viewId);
+    window.localStorage.setItem(activeViewKey(), viewId);
   } catch {
     // Si el navegador bloquea localStorage, la navegacion sigue funcionando.
   }
@@ -766,11 +784,18 @@ function saveActiveView(viewId) {
 function restoreSavedView() {
   let savedView = '';
   try {
-    savedView = window.localStorage.getItem(ACTIVE_VIEW_KEY) || '';
+    savedView = window.localStorage.getItem(activeViewKey()) || '';
+    if (!savedView && state.user?.role !== 'tenant_owner') {
+      savedView = window.localStorage.getItem(ACTIVE_VIEW_KEY) || '';
+    }
   } catch {
     savedView = '';
   }
   showView(canAccessView(state.user?.role, savedView) ? savedView : defaultViewForRole(state.user?.role));
+}
+
+function activeViewKey() {
+  return `${ACTIVE_VIEW_KEY}_${state.user?.role || 'guest'}`;
 }
 
 async function checkHealth() {
@@ -926,8 +951,9 @@ async function closeCashShift() {
 
 async function loadCashShifts() {
   if (!canViewReports(state.user?.role) && state.user?.role !== 'cashier') return;
-  const storeId = activeStoreId();
-  const data = await api(`/api/cash-shifts${storeId ? `?store_id=${encodeURIComponent(storeId)}` : ''}`);
+  const storeId = reportViewActive() ? reportStoreId() : activeStoreId();
+  const query = storeId && storeId !== 'all' ? `?store_id=${encodeURIComponent(storeId)}` : '';
+  const data = await api(`/api/cash-shifts${query}`);
   state.cashShifts = data.shifts || [];
   renderCashShifts();
 }
@@ -950,7 +976,7 @@ function renderCashShifts() {
 
 async function loadStockMovements() {
   if (!canViewReports(state.user?.role) && state.user?.role !== 'editor') return;
-  const storeId = activeStoreId();
+  const storeId = reportViewActive() ? reportStoreId() : activeStoreId();
   if (!storeId) return;
   const data = await api(`/api/stock-movements?store_id=${encodeURIComponent(storeId)}`);
   state.stockMovements = data.movements || [];
@@ -964,7 +990,7 @@ function renderStockMovements() {
       <span class="row-icon"><i data-lucide="layers-3"></i></span>
       <div>
         <strong>${escapeHtml(movement.product_name || 'Producto eliminado')}</strong>
-        <div class="meta">${stockMovementLabel(movement.movement_type)} - ${movement.quantity} unidades - ${formatDate(movement.created_at)}</div>
+        <div class="meta">${stockMovementLabel(movement.movement_type)} - ${movement.quantity} unidades - ${formatDate(movement.created_at)}${movement.store_name ? ` - ${escapeHtml(movement.store_name)}` : ''}</div>
         <div class="meta">${movement.previous_stock ?? ''} -> ${movement.new_stock ?? ''}${movement.user_name ? ` - ${escapeHtml(movement.user_name)}` : ''}</div>
       </div>
     </div>
@@ -983,7 +1009,7 @@ async function refreshSummary() {
 
 async function loadReports() {
   const params = new URLSearchParams({ from: els.reportFrom.value, to: els.reportTo.value });
-  const storeId = activeStoreId();
+  const storeId = reportStoreId();
   if (storeId) params.set('store_id', storeId);
   const data = await api(`/api/reports?${params}`);
   state.lastReport = data;
@@ -991,6 +1017,7 @@ async function loadReports() {
   els.reportProfit.textContent = money(data.totals.gross_profit);
   els.reportMargin.textContent = `${Number(data.totals.margin_percent || 0).toFixed(1)}%`;
   els.reportUnits.textContent = data.totals.units_sold;
+  els.reportProducts.textContent = data.totals.products_count || 0;
 
   els.bestSellersList.innerHTML = data.best_sellers.map((item) => `
     <div class="data-row">
@@ -1018,7 +1045,7 @@ async function loadReports() {
     <div class="table-row sales-report-row">
       <span>${formatDate(sale.created_at)}</span>
       <span>${shortId(sale.id)}</span>
-      <span>${paymentLabel(sale.payment_method)}${sale.status === 'void' ? ' / Anulada' : ''}</span>
+      <span>${paymentLabel(sale.payment_method)}${sale.store_name ? ` / ${escapeHtml(sale.store_name)}` : ''}${sale.status === 'void' ? ' / Anulada' : ''}</span>
       <strong>${money(sale.total)}</strong>
       <span>${renderSaleActions(sale)}</span>
     </div>
@@ -1026,6 +1053,33 @@ async function loadReports() {
   renderIcons();
 
   renderReportCharts(data);
+}
+
+async function refreshReportPanels() {
+  await Promise.all([
+    loadReports(),
+    loadCashShifts(),
+    loadStockMovements()
+  ]);
+}
+
+function reportStoreId() {
+  if (els.reportStoreSelect?.value) return els.reportStoreSelect.value;
+  return activeStoreId();
+}
+
+function reportViewActive() {
+  return document.querySelector('#reportsView')?.classList.contains('active');
+}
+
+function applyReportRange(range) {
+  const today = new Date();
+  const from = new Date(today);
+  if (range === '7d') from.setDate(today.getDate() - 6);
+  if (range === 'month') from.setDate(1);
+  els.reportFrom.value = dateInputValue(from);
+  els.reportTo.value = dateInputValue(today);
+  refreshReportPanels().catch((error) => showToast(error.message));
 }
 
 async function handleSaleAction(event) {
@@ -2321,9 +2375,14 @@ function findProductImage(id) {
 }
 
 function setDefaultReportDates() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dateInputValue(new Date());
   els.reportFrom.value = today;
   els.reportTo.value = today;
+}
+
+function dateInputValue(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
 }
 
 function debounce(fn, wait) {
@@ -2420,6 +2479,7 @@ function isGlobalAdmin(role) {
 }
 
 function defaultViewForRole(role) {
+  if (role === 'tenant_owner') return 'reportsView';
   return role === 'editor' ? 'productsView' : 'posView';
 }
 

@@ -165,6 +165,12 @@
             <h2>Reportes</h2>
           </div>
           <div class="date-filters">
+            <select id="reportStoreSelect" class="report-store-select" aria-label="Sucursal de reportes"></select>
+            <div class="quick-date-filters" aria-label="Rangos rapidos">
+              <button type="button" class="secondary" data-report-range="today">Hoy</button>
+              <button type="button" class="secondary" data-report-range="7d">7 dias</button>
+              <button type="button" class="secondary" data-report-range="month">Mes</button>
+            </div>
             <input id="reportFrom" type="date">
             <input id="reportTo" type="date">
             <button id="loadReportsButton" class="secondary"><i data-lucide="refresh-cw"></i>Actualizar</button>
@@ -175,6 +181,7 @@
           <div class="metric"><span>Ganancia bruta</span><strong id="reportProfit">Bs 0.00</strong></div>
           <div class="metric"><span>Margen</span><strong id="reportMargin">0%</strong></div>
           <div class="metric"><span>Unidades</span><strong id="reportUnits">0</strong></div>
+          <div class="metric"><span>Productos</span><strong id="reportProducts">0</strong></div>
         </div>
       </section>
 
