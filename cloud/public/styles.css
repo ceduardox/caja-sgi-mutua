@@ -1945,6 +1945,8 @@ select {
   .is-mobile-device #productDialog.quick-mode {
     width: min(96vw, 520px);
     max-height: min(82dvh, 680px);
+    margin-top: 4dvh;
+    margin-bottom: auto;
   }
 
   .is-mobile-device #productDialog.quick-mode form {
@@ -1954,7 +1956,7 @@ select {
     max-height: min(82dvh, 680px);
     flex-direction: column;
     overflow: hidden;
-    padding: 12px 54px 12px;
+    padding: 12px 46px 12px;
   }
 
   .is-mobile-device #productDialog.quick-mode .panel-header {
@@ -2080,7 +2082,27 @@ select {
   }
 
   .is-mobile-device #productDialog.quick-mode .inline-input {
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(116px, 0.58fr);
+    gap: 8px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode #productBarcode {
+    min-width: 0;
+  }
+
+  .is-mobile-device #productDialog.quick-mode #productBarcodeCameraButton {
+    min-height: 52px;
+    padding: 8px 9px;
+    gap: 6px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .is-mobile-device #productDialog.quick-mode #productBarcodeCameraButton svg {
+    width: 17px;
+    height: 17px;
   }
 
   .is-mobile-device #productDialog.quick-mode .field-hint {
@@ -2095,8 +2117,8 @@ select {
     position: absolute;
     top: 50%;
     z-index: 7;
-    width: 42px;
-    min-height: 74px;
+    width: 38px;
+    min-height: 68px;
     padding: 0;
     border-radius: 999px;
     transform: translateY(-50%);
@@ -2108,11 +2130,11 @@ select {
   }
 
   .is-mobile-device #productDialog.quick-mode .side-step.prev {
-    left: 8px;
+    left: 6px;
   }
 
   .is-mobile-device #productDialog.quick-mode .side-step.next {
-    right: 8px;
+    right: 6px;
   }
 
   .is-mobile-device #productDialog.quick-mode .side-step:disabled {
