@@ -59,7 +59,7 @@
           <div class="input-shell">
             <i data-lucide="search"></i>
             <input id="scanInput" autocomplete="off" placeholder="Codigo de barras, SKU o nombre">
-            <button id="scanCameraButton" class="icon-action" type="button" aria-label="Escanear con camara"><i data-lucide="camera"></i></button>
+            <button id="scanCameraButton" class="icon-action mobile-scan-only" type="button" aria-label="Escanear con camara"><i data-lucide="camera"></i></button>
           </div>
           <small>Con lector USB: escanea y se agrega al carrito. En movil puedes usar la camara.</small>
         </label>
@@ -350,8 +350,8 @@
           <label>Codigo de barras
             <div class="inline-input">
               <input id="productBarcode" autocomplete="off" placeholder="Escanea o escribe el codigo">
-              <button id="focusBarcodeButton" class="secondary" type="button">Escanear</button>
-              <button id="productBarcodeCameraButton" class="secondary" type="button"><i data-lucide="camera"></i>Camara</button>
+              <button id="focusBarcodeButton" class="secondary desktop-scan-only" type="button">Escanear</button>
+              <button id="productBarcodeCameraButton" class="secondary mobile-scan-only" type="button"><i data-lucide="camera"></i>Escanear</button>
             </div>
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>

@@ -382,6 +382,11 @@ textarea {
   box-shadow: none;
 }
 
+.is-desktop-device .mobile-scan-only,
+.is-mobile-device .desktop-scan-only {
+  display: none !important;
+}
+
 #scanInput {
   min-height: 58px;
   font-size: 16px;
@@ -1174,6 +1179,10 @@ label {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
+}
+
+.is-mobile-device .inline-input {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 input.scan-active {

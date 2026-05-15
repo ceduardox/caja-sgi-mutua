@@ -197,10 +197,12 @@ let waitingProductBarcodeScan = false;
 let productBarcodeBuffer = '';
 let productBarcodeTimer;
 let chartsResizeObserver;
+let mobileDevice = false;
 
 boot();
 
 function boot() {
+  configureDeviceUi();
   setDefaultReportDates();
   bindEvents();
   initializeSession();
@@ -208,6 +210,12 @@ function boot() {
     if (canSell(state.user?.role)) refreshSummary().catch(() => {});
   }, 15000);
   renderIcons();
+}
+
+function configureDeviceUi() {
+  mobileDevice = isMobileDevice();
+  document.body.classList.toggle('is-mobile-device', mobileDevice);
+  document.body.classList.toggle('is-desktop-device', !mobileDevice);
 }
 
 function bindEvents() {
@@ -1340,7 +1348,9 @@ function setBarcodeScanState(active) {
   els.productBarcode.classList.toggle('scan-active', active);
   els.barcodeScanHint.textContent = active
     ? 'Apunta el lector al codigo de barras. Se rellenara aqui automaticamente.'
-    : 'Presiona Escanear y lee el codigo del producto.';
+    : mobileDevice
+      ? 'Presiona Escanear para usar la camara del movil.'
+      : 'Presiona Escanear y lee el codigo con el lector USB.';
 }
 
 function handleGlobalBarcodeScan(event) {
@@ -2061,6 +2071,13 @@ function focusDefaultView() {
     return;
   }
   showView('posView');
+}
+
+function isMobileDevice() {
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
+  const smallViewport = Math.min(window.innerWidth || 9999, screen.width || 9999) <= 820;
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (coarsePointer && smallViewport);
 }
 
 function activeStoreId() {
