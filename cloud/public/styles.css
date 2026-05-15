@@ -2082,27 +2082,25 @@ select {
   }
 
   .is-mobile-device #productDialog.quick-mode .inline-input {
-    grid-template-columns: minmax(0, 1fr) minmax(116px, 0.58fr);
+    grid-template-columns: minmax(0, 1fr) 58px;
     gap: 8px;
   }
 
   .is-mobile-device #productDialog.quick-mode #productBarcode {
     min-width: 0;
+    font-size: 15px;
   }
 
   .is-mobile-device #productDialog.quick-mode #productBarcodeCameraButton {
+    width: 58px;
     min-height: 52px;
-    padding: 8px 9px;
-    gap: 6px;
+    padding: 0;
     border-radius: 10px;
-    font-size: 14px;
-    line-height: 1;
-    white-space: nowrap;
   }
 
   .is-mobile-device #productDialog.quick-mode #productBarcodeCameraButton svg {
-    width: 17px;
-    height: 17px;
+    width: 26px;
+    height: 26px;
   }
 
   .is-mobile-device #productDialog.quick-mode .field-hint {
