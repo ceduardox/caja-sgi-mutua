@@ -201,6 +201,7 @@ let productBarcodeBuffer = '';
 let productBarcodeTimer;
 let chartsResizeObserver;
 let mobileDevice = false;
+let posSearchRequestId = 0;
 
 boot();
 
@@ -237,7 +238,7 @@ function bindEvents() {
   els.salesList.addEventListener('click', handleSaleAction);
   els.reportSalesList.addEventListener('click', handleSaleAction);
   els.cashShiftActions.addEventListener('click', handleCashShiftAction);
-  els.scanInput.addEventListener('input', debounce(handleSearch, 140));
+  els.scanInput.addEventListener('input', handleSearch);
   els.scanInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -788,10 +789,11 @@ async function loadProducts(query = '', options = {}) {
     params.set('status', 'active');
   }
   const data = await api(`/api/products${params.toString() ? `?${params}` : ''}`);
+  if (options.posSearchRequestId && options.posSearchRequestId !== posSearchRequestId) return;
   state.products = data.products;
   renderProducts();
   renderProductManager();
-  renderSearchResults(query && document.activeElement === els.scanInput ? data.products : []);
+  renderSearchResults(query && document.activeElement === els.scanInput ? filterPosProducts(query, data.products) : []);
 }
 
 async function loadSales() {
@@ -1082,10 +1084,40 @@ async function printSaleReceipt(sale) {
 async function handleSearch() {
   const query = els.scanInput.value.trim();
   if (!query) {
+    posSearchRequestId += 1;
     renderSearchResults([]);
     return;
   }
-  await loadProducts(query);
+  renderSearchResults(filterPosProducts(query, state.products));
+  const requestId = ++posSearchRequestId;
+  await loadProducts(query, { posSearchRequestId: requestId });
+}
+
+function filterPosProducts(query, products = state.products) {
+  const term = normalizeSearchText(query);
+  if (!term) return [];
+  const matches = (products || []).filter((product) => {
+    const fields = [
+      product.name,
+      product.barcode,
+      product.category_name,
+      state.settings.sku_enabled ? product.sku : ''
+    ];
+    return fields.some((value) => normalizeSearchText(value).includes(term));
+  });
+  return matches.sort((first, second) => scoreProductMatch(first, term) - scoreProductMatch(second, term));
+}
+
+function scoreProductMatch(product, term) {
+  const name = normalizeSearchText(product.name);
+  const barcode = normalizeSearchText(product.barcode);
+  const sku = state.settings.sku_enabled ? normalizeSearchText(product.sku) : '';
+  if (barcode === term || sku === term) return 0;
+  if (name === term) return 1;
+  if (name.startsWith(term)) return 2;
+  if (barcode.startsWith(term) || sku.startsWith(term)) return 3;
+  if (name.includes(term)) return 4;
+  return 5;
 }
 
 function addScannedProduct() {
@@ -2029,6 +2061,14 @@ function debounce(fn, wait) {
 
 function money(value) {
   return `Bs ${Number(value || 0).toFixed(2)}`;
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 function formatDate(value) {
