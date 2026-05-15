@@ -18,6 +18,7 @@ const els = {
   tabs: document.querySelectorAll('.tab'),
   views: document.querySelectorAll('.view'),
   scanInput: document.querySelector('#scanInput'),
+  scanCameraButton: document.querySelector('#scanCameraButton'),
   searchResults: document.querySelector('#searchResults'),
   cartItems: document.querySelector('#cartItems'),
   cartTotal: document.querySelector('#cartTotal'),
@@ -72,6 +73,7 @@ const els = {
   removeProductImage: document.querySelector('#removeProductImage'),
   productName: document.querySelector('#productName'),
   productBarcode: document.querySelector('#productBarcode'),
+  productBarcodeCameraButton: document.querySelector('#productBarcodeCameraButton'),
   barcodeScanHint: document.querySelector('#barcodeScanHint'),
   productSku: document.querySelector('#productSku'),
   productCategoryName: document.querySelector('#productCategoryName'),
@@ -118,6 +120,11 @@ const els = {
   capturePhotoButton: document.querySelector('#capturePhotoButton'),
   retakePhotoButton: document.querySelector('#retakePhotoButton'),
   confirmPhotoButton: document.querySelector('#confirmPhotoButton'),
+  barcodeCameraDialog: document.querySelector('#barcodeCameraDialog'),
+  closeBarcodeCameraDialog: document.querySelector('#closeBarcodeCameraDialog'),
+  barcodeCameraVideo: document.querySelector('#barcodeCameraVideo'),
+  barcodeCameraCanvas: document.querySelector('#barcodeCameraCanvas'),
+  barcodeCameraStatus: document.querySelector('#barcodeCameraStatus'),
   reportFrom: document.querySelector('#reportFrom'),
   reportTo: document.querySelector('#reportTo'),
   loadReportsButton: document.querySelector('#loadReportsButton'),
@@ -145,6 +152,12 @@ let paymentsChart;
 let stockChart;
 let cameraStream;
 let capturedCameraImage;
+let barcodeCameraStream;
+let barcodeScannerMode = 'pos';
+let barcodeDetector;
+let barcodeScanTimer;
+let zxingControls;
+let zxingReader;
 let waitingProductBarcodeScan = false;
 let productBarcodeBuffer = '';
 let productBarcodeTimer;
@@ -184,6 +197,7 @@ function bindEvents() {
       addScannedProduct();
     }
   });
+  els.scanCameraButton.addEventListener('click', () => openBarcodeCamera('pos'));
   els.productSearchInput.addEventListener('input', debounce(() => loadProducts(els.productSearchInput.value.trim(), { manager: true }), 180));
   [els.productCategoryFilter, els.productStockFilter, els.productStatusFilter].forEach((input) => {
     input.addEventListener('change', () => loadProducts(els.productSearchInput.value.trim(), { manager: true }));
@@ -203,6 +217,7 @@ function bindEvents() {
   els.newProductButton.addEventListener('click', () => openProductDialog());
   els.scanNewProductButton.addEventListener('click', () => openProductDialog(null, { focusBarcode: true }));
   els.focusBarcodeButton.addEventListener('click', startProductBarcodeScan);
+  els.productBarcodeCameraButton.addEventListener('click', () => openBarcodeCamera('product'));
   els.productBarcode.addEventListener('input', handleProductBarcodeInput);
   els.productBarcode.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -218,6 +233,8 @@ function bindEvents() {
   els.openCameraButton.addEventListener('click', openCameraCapture);
   els.closeCameraDialog.addEventListener('click', closeCameraCapture);
   els.cameraDialog.addEventListener('close', stopCameraStream);
+  els.closeBarcodeCameraDialog.addEventListener('click', closeBarcodeCamera);
+  els.barcodeCameraDialog.addEventListener('close', stopBarcodeCamera);
   els.capturePhotoButton.addEventListener('click', captureCameraFrame);
   els.retakePhotoButton.addEventListener('click', retakeCameraPhoto);
   els.confirmPhotoButton.addEventListener('click', confirmCameraPhoto);
@@ -1302,6 +1319,120 @@ function handleGlobalBarcodeScan(event) {
       handleProductBarcodeInput();
     }, 20);
   }
+}
+
+async function openBarcodeCamera(mode = 'pos') {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showToast('Este navegador no permite usar la camara');
+    return;
+  }
+  barcodeScannerMode = mode;
+  els.barcodeCameraStatus.textContent = 'Iniciando camara...';
+  els.barcodeCameraDialog.showModal();
+  try {
+    if (window.ZXingBrowser?.BrowserMultiFormatReader) {
+      await startZxingBarcodeCamera();
+      return;
+    }
+    await startNativeBarcodeCamera();
+  } catch (error) {
+    closeBarcodeCamera();
+    showToast(error.message || 'No se pudo abrir la camara');
+  }
+}
+
+async function startZxingBarcodeCamera() {
+  els.barcodeCameraStatus.textContent = 'Apunta la camara al codigo de barras.';
+  zxingReader = zxingReader || new window.ZXingBrowser.BrowserMultiFormatReader();
+  zxingControls = await zxingReader.decodeFromVideoDevice(undefined, els.barcodeCameraVideo, (result) => {
+    const code = result?.getText?.() || result?.text || '';
+    if (code) applyCameraBarcode(code);
+  });
+}
+
+async function startNativeBarcodeCamera() {
+  if (!('BarcodeDetector' in window)) {
+    throw new Error('El lector por camara no esta disponible en este navegador. Prueba Chrome/Android o instala la PWA.');
+  }
+  barcodeDetector = barcodeDetector || new window.BarcodeDetector({
+    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf']
+  });
+  barcodeCameraStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' } },
+    audio: false
+  });
+  els.barcodeCameraVideo.srcObject = barcodeCameraStream;
+  await els.barcodeCameraVideo.play();
+  els.barcodeCameraStatus.textContent = 'Apunta la camara al codigo de barras.';
+  scanBarcodeFrame();
+}
+
+async function scanBarcodeFrame() {
+  if (!barcodeCameraStream || els.barcodeCameraDialog.open === false) return;
+  try {
+    const video = els.barcodeCameraVideo;
+    if (video.readyState >= 2) {
+      const canvas = els.barcodeCameraCanvas;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const context = canvas.getContext('2d');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const codes = await barcodeDetector.detect(canvas);
+      const code = codes?.[0]?.rawValue;
+      if (code) {
+        applyCameraBarcode(code);
+        return;
+      }
+    }
+  } catch {
+    // Mantiene el escaneo activo aunque un frame falle.
+  }
+  barcodeScanTimer = window.setTimeout(scanBarcodeFrame, 220);
+}
+
+function applyCameraBarcode(value) {
+  const code = String(value || '').trim();
+  if (!code) return;
+  closeBarcodeCamera();
+  if (barcodeScannerMode === 'product') {
+    els.productBarcode.value = code;
+    waitingProductBarcodeScan = false;
+    productBarcodeBuffer = '';
+    setBarcodeScanState(false);
+    els.barcodeScanHint.textContent = `Codigo detectado con camara: ${code}`;
+    els.productBarcode.dispatchEvent(new Event('input', { bubbles: true }));
+    showToast('Codigo de barras agregado');
+    return;
+  }
+  els.scanInput.value = code;
+  showToast('Codigo detectado');
+  handleCameraPosBarcode(code);
+}
+
+async function handleCameraPosBarcode(code) {
+  try {
+    await loadProducts(code);
+    addScannedProduct();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function closeBarcodeCamera() {
+  if (els.barcodeCameraDialog.open) els.barcodeCameraDialog.close();
+  stopBarcodeCamera();
+}
+
+function stopBarcodeCamera() {
+  window.clearTimeout(barcodeScanTimer);
+  barcodeScanTimer = null;
+  if (zxingControls?.stop) zxingControls.stop();
+  zxingControls = null;
+  if (barcodeCameraStream) {
+    barcodeCameraStream.getTracks().forEach((track) => track.stop());
+    barcodeCameraStream = null;
+  }
+  els.barcodeCameraVideo.srcObject = null;
 }
 
 async function saveProduct(event) {

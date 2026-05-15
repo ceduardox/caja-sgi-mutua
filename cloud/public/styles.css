@@ -343,7 +343,7 @@ textarea {
 .input-shell {
   min-height: 62px;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--line);
@@ -369,6 +369,17 @@ textarea {
 
 .input-shell svg {
   color: #8a96aa;
+}
+
+.icon-action {
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid #d8e5ea;
+  border-radius: 10px;
+  background: #eef8f6;
+  color: var(--primary-dark);
+  box-shadow: none;
 }
 
 #scanInput {
@@ -891,10 +902,12 @@ dialog form,
 }
 
 .camera-stage {
+  position: relative;
   display: grid;
   place-items: center;
   padding: 16px 18px;
   background: #0f1720;
+  overflow: hidden;
 }
 
 .camera-stage video,
@@ -911,6 +924,24 @@ dialog form,
   grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
   padding: 0 18px 18px;
+}
+
+.scanner-stage {
+  min-height: 340px;
+}
+
+.scanner-frame {
+  position: absolute;
+  inset: 22% 10%;
+  border: 3px solid rgba(0, 217, 197, 0.88);
+  border-radius: 14px;
+  box-shadow: 0 0 0 999px rgba(2, 8, 23, 0.32);
+  pointer-events: none;
+}
+
+#barcodeCameraStatus {
+  margin: 12px 18px 18px;
+  font-weight: 800;
 }
 
 .file-button {
@@ -1129,7 +1160,7 @@ label {
 
 .inline-input {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
 }
 
@@ -1803,6 +1834,7 @@ select {
   .product-editor,
   .form-grid,
   .filter-grid,
+  .inline-input,
   .payment-methods,
   .dialog-actions {
     grid-template-columns: 1fr;

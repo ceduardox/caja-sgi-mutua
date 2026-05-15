@@ -59,8 +59,9 @@
           <div class="input-shell">
             <i data-lucide="search"></i>
             <input id="scanInput" autocomplete="off" placeholder="Codigo de barras, SKU o nombre">
+            <button id="scanCameraButton" class="icon-action" type="button" aria-label="Escanear con camara"><i data-lucide="camera"></i></button>
           </div>
-          <small>Con lector USB: escanea y se agrega al carrito.</small>
+          <small>Con lector USB: escanea y se agrega al carrito. En movil puedes usar la camara.</small>
         </label>
 
         <div id="searchResults" class="search-results"></div>
@@ -346,6 +347,7 @@
             <div class="inline-input">
               <input id="productBarcode" autocomplete="off" placeholder="Escanea o escribe el codigo">
               <button id="focusBarcodeButton" class="secondary" type="button">Escanear</button>
+              <button id="productBarcodeCameraButton" class="secondary" type="button"><i data-lucide="camera"></i>Camara</button>
             </div>
             <small id="barcodeScanHint" class="field-hint">Presiona Escanear y lee el codigo del producto.</small>
           </label>
@@ -458,8 +460,25 @@
       </div>
     </dialog>
 
+    <dialog id="barcodeCameraDialog" class="camera-dialog">
+      <div class="panel-header camera-header">
+        <div>
+          <p class="eyebrow">Codigo de barras</p>
+          <h2>Escanear con camara</h2>
+        </div>
+        <button id="closeBarcodeCameraDialog" class="ghost" type="button">Cerrar</button>
+      </div>
+      <div class="camera-stage scanner-stage">
+        <video id="barcodeCameraVideo" autoplay playsinline muted></video>
+        <canvas id="barcodeCameraCanvas" hidden></canvas>
+        <div class="scanner-frame"></div>
+      </div>
+      <p id="barcodeCameraStatus" class="field-hint">Apunta la camara al codigo de barras.</p>
+    </dialog>
+
     <div id="toast" class="toast" hidden></div>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/@zxing/browser@latest"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="/app.js"></script>
     <script>
