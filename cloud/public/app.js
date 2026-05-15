@@ -1434,8 +1434,9 @@ function updateProductQuickStep() {
   els.productStepBar.style.width = `${((productQuickStep + 1) / total) * 100}%`;
   els.productPrevStepButton.disabled = productQuickStep === 0;
   els.productNextStepButton.innerHTML = productQuickStep === total - 1
-    ? 'Guardar producto<i data-lucide="check"></i>'
-    : 'Siguiente<i data-lucide="arrow-right"></i>';
+    ? '<span>Guardar</span><i data-lucide="check"></i>'
+    : '<span>Siguiente</span><i data-lucide="arrow-right"></i>';
+  els.productNextStepButton.setAttribute('aria-label', productQuickStep === total - 1 ? 'Guardar producto' : 'Siguiente');
   renderIcons();
 }
 

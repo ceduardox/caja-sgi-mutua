@@ -1944,15 +1944,47 @@ select {
 
   .is-mobile-device #productDialog.quick-mode {
     width: min(96vw, 520px);
-    max-height: min(88dvh, 720px);
+    max-height: min(82dvh, 680px);
   }
 
   .is-mobile-device #productDialog.quick-mode form {
+    position: relative;
     display: flex;
-    min-height: min(76dvh, 620px);
-    max-height: min(88dvh, 720px);
+    min-height: min(62dvh, 560px);
+    max-height: min(82dvh, 680px);
     flex-direction: column;
     overflow: hidden;
+    padding: 12px 54px 12px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .panel-header {
+    min-height: 42px;
+    margin: 0 0 8px;
+    padding-right: 38px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .panel-header .eyebrow {
+    display: none;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .panel-header h2 {
+    font-size: 22px;
+    line-height: 1.1;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .dialog-close-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 8;
+    width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .dialog-close-button span {
+    display: none;
   }
 
   .is-mobile-device #productDialog.quick-mode .product-quick-flow,
@@ -1962,12 +1994,38 @@ select {
 
   .is-mobile-device #productDialog.quick-mode .product-quick-flow {
     flex: 0 0 auto;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
     border-bottom: 1px solid var(--line);
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-progress {
+    display: grid;
+    gap: 2px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-progress span {
+    font-size: 11px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-progress strong {
+    font-size: 20px;
+    line-height: 1.15;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-track {
+    height: 6px;
+    margin: 8px 0;
   }
 
   .is-mobile-device #productDialog.quick-mode .quick-actions.top {
     justify-items: start;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .quick-actions.top .compact {
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 13px;
   }
 
   .is-mobile-device #productDialog.quick-mode .product-editor {
@@ -1975,7 +2033,12 @@ select {
     display: block;
     min-height: 0;
     overflow: auto;
-    padding: 16px 0 10px;
+    padding: 12px 0 6px;
+    scrollbar-width: none;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .product-editor::-webkit-scrollbar {
+    display: none;
   }
 
   .is-mobile-device #productDialog.quick-mode .form-grid {
@@ -1992,8 +2055,8 @@ select {
 
   .is-mobile-device #productDialog.quick-mode label.product-step-field.active-step {
     gap: 8px;
-    margin-bottom: 14px;
-    font-size: 18px;
+    margin-bottom: 10px;
+    font-size: 17px;
   }
 
   .is-mobile-device #productDialog.quick-mode .image-editor.active-step {
@@ -2008,8 +2071,8 @@ select {
   .is-mobile-device #productDialog.quick-mode input,
   .is-mobile-device #productDialog.quick-mode textarea,
   .is-mobile-device #productDialog.quick-mode select {
-    min-height: 58px;
-    font-size: 18px;
+    min-height: 52px;
+    font-size: 17px;
   }
 
   .is-mobile-device #productDialog.quick-mode textarea {
@@ -2025,20 +2088,36 @@ select {
   }
 
   .is-mobile-device #productDialog.quick-mode .quick-actions.bottom {
-    flex: 0 0 auto;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    gap: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-    background: #fff;
+    display: block;
   }
 
-  .is-mobile-device #productDialog.quick-mode .quick-actions.bottom .primary {
-    min-height: 56px;
+  .is-mobile-device #productDialog.quick-mode .side-step {
+    position: absolute;
+    top: 50%;
+    z-index: 7;
+    width: 42px;
+    min-height: 74px;
+    padding: 0;
+    border-radius: 999px;
+    transform: translateY(-50%);
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
   }
 
-  .is-mobile-device #productDialog.quick-mode .quick-actions.bottom .secondary {
-    min-height: 56px;
+  .is-mobile-device #productDialog.quick-mode .side-step span {
+    display: none;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .side-step.prev {
+    left: 8px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .side-step.next {
+    right: 8px;
+  }
+
+  .is-mobile-device #productDialog.quick-mode .side-step:disabled {
+    opacity: 0.28;
+    pointer-events: none;
   }
 
   .is-mobile-device #productDialog.quick-mode > form > button[type="submit"] {

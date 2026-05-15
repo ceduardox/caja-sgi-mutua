@@ -336,7 +336,7 @@
             <p class="eyebrow">Producto</p>
             <h2 id="productDialogTitle">Nuevo producto</h2>
           </div>
-          <button type="button" id="closeProductDialog" class="ghost">Cerrar</button>
+          <button type="button" id="closeProductDialog" class="ghost dialog-close-button" aria-label="Cerrar"><i data-lucide="x"></i><span>Cerrar</span></button>
         </div>
         <input type="hidden" id="productId">
         <input type="hidden" id="productImageValue">
@@ -347,7 +347,7 @@
           </div>
           <div class="quick-track" aria-hidden="true"><span id="productStepBar"></span></div>
           <div class="quick-actions top">
-            <button id="productFullFormButton" class="ghost" type="button"><i data-lucide="rows-3"></i>Formulario completo</button>
+            <button id="productFullFormButton" class="ghost compact" type="button"><i data-lucide="rows-3"></i>Completo</button>
           </div>
         </div>
         <div class="product-editor">
@@ -388,8 +388,8 @@
           </div>
         </div>
         <div id="productQuickActions" class="quick-actions bottom" hidden>
-          <button id="productPrevStepButton" class="secondary" type="button"><i data-lucide="arrow-left"></i>Atras</button>
-          <button id="productNextStepButton" class="primary" type="button">Siguiente<i data-lucide="arrow-right"></i></button>
+          <button id="productPrevStepButton" class="secondary side-step prev" type="button" aria-label="Atras"><i data-lucide="arrow-left"></i><span>Atras</span></button>
+          <button id="productNextStepButton" class="primary side-step next" type="button" aria-label="Siguiente"><span>Siguiente</span><i data-lucide="arrow-right"></i></button>
         </div>
         <button class="primary" type="submit">Guardar producto</button>
       </form>
